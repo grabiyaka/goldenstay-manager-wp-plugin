@@ -387,20 +387,181 @@
     /**
      * Render reservations calendar
      */
+    let currentCalendarDate = new Date();
+    let currentView = 'calendar'; // 'calendar' or 'list'
+    let calendarReservations = [];
+    
     function renderReservationsCalendar(reservations) {
         const $calendar = $('#goldenstay-reservations-calendar');
         $calendar.empty();
+        
+        calendarReservations = reservations || [];
         
         if (!reservations || reservations.length === 0) {
             $calendar.append($('<p>', { class: 'no-reservations' }).text('No reservations found'));
             return;
         }
         
-        // Create calendar header
+        // Create calendar header with view toggle
         const header = $('<div>', { class: 'calendar-header' });
-        header.append($('<h3>').html('<span class="dashicons dashicons-calendar-alt"></span> Reservations (' + reservations.length + ')'));
+        const titleSection = $('<div>', { class: 'calendar-title' });
+        titleSection.append($('<h3>').html('<span class="dashicons dashicons-calendar-alt"></span> Reservations (' + reservations.length + ')'));
+        
+        const viewToggle = $('<div>', { class: 'calendar-view-toggle' });
+        const calendarBtn = $('<button>', { 
+            class: 'view-btn ' + (currentView === 'calendar' ? 'active' : ''),
+            'data-view': 'calendar'
+        }).html('<span class="dashicons dashicons-calendar"></span> Calendar');
+        
+        const listBtn = $('<button>', { 
+            class: 'view-btn ' + (currentView === 'list' ? 'active' : ''),
+            'data-view': 'list'
+        }).html('<span class="dashicons dashicons-list-view"></span> List');
+        
+        viewToggle.append(calendarBtn, listBtn);
+        header.append(titleSection, viewToggle);
         $calendar.append(header);
         
+        // View toggle handlers
+        calendarBtn.on('click', function() {
+            currentView = 'calendar';
+            renderReservationsCalendar(calendarReservations);
+        });
+        
+        listBtn.on('click', function() {
+            currentView = 'list';
+            renderReservationsCalendar(calendarReservations);
+        });
+        
+        // Render appropriate view
+        if (currentView === 'calendar') {
+            renderCalendarView($calendar, reservations);
+        } else {
+            renderListView($calendar, reservations);
+        }
+    }
+    
+    /**
+     * Render calendar grid view
+     */
+    function renderCalendarView($calendar, reservations) {
+        // Calendar navigation
+        const nav = $('<div>', { class: 'calendar-nav' });
+        const prevBtn = $('<button>', { class: 'calendar-nav-btn' })
+            .html('<span class="dashicons dashicons-arrow-left-alt2"></span>')
+            .on('click', function() {
+                currentCalendarDate.setMonth(currentCalendarDate.getMonth() - 1);
+                renderReservationsCalendar(calendarReservations);
+            });
+        
+        const monthYear = $('<div>', { class: 'calendar-month-year' })
+            .text(currentCalendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }));
+        
+        const nextBtn = $('<button>', { class: 'calendar-nav-btn' })
+            .html('<span class="dashicons dashicons-arrow-right-alt2"></span>')
+            .on('click', function() {
+                currentCalendarDate.setMonth(currentCalendarDate.getMonth() + 1);
+                renderReservationsCalendar(calendarReservations);
+            });
+        
+        const todayBtn = $('<button>', { class: 'calendar-today-btn' })
+            .text('Today')
+            .on('click', function() {
+                currentCalendarDate = new Date();
+                renderReservationsCalendar(calendarReservations);
+            });
+        
+        nav.append(prevBtn, monthYear, nextBtn, todayBtn);
+        $calendar.append(nav);
+        
+        // Calendar grid
+        const grid = $('<div>', { class: 'calendar-grid' });
+        
+        // Days of week header
+        const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        daysOfWeek.forEach(day => {
+            grid.append($('<div>', { class: 'calendar-day-header' }).text(day));
+        });
+        
+        // Get calendar data
+        const year = currentCalendarDate.getFullYear();
+        const month = currentCalendarDate.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const prevLastDay = new Date(year, month, 0);
+        
+        const firstDayWeek = firstDay.getDay();
+        const daysInMonth = lastDay.getDate();
+        const prevDaysInMonth = prevLastDay.getDate();
+        
+        // Previous month days
+        for (let i = firstDayWeek - 1; i >= 0; i--) {
+            const day = prevDaysInMonth - i;
+            const cell = $('<div>', { class: 'calendar-day other-month' });
+            cell.append($('<div>', { class: 'day-number' }).text(day));
+            grid.append(cell);
+        }
+        
+        // Current month days
+        const today = new Date();
+        for (let day = 1; day <= daysInMonth; day++) {
+            const date = new Date(year, month, day);
+            const dateStr = date.toISOString().split('T')[0];
+            const isToday = date.toDateString() === today.toDateString();
+            
+            const cell = $('<div>', { 
+                class: 'calendar-day' + (isToday ? ' today' : ''),
+                'data-date': dateStr
+            });
+            
+            cell.append($('<div>', { class: 'day-number' }).text(day));
+            
+            // Find reservations for this date
+            const dayReservations = reservations.filter(r => {
+                const from = new Date(r.date_from);
+                const to = new Date(r.date_to);
+                return date >= from && date < to;
+            });
+            
+            if (dayReservations.length > 0) {
+                const resContainer = $('<div>', { class: 'day-reservations' });
+                dayReservations.forEach(res => {
+                    const statusClass = getReservationStatusClass(res.status_id);
+                    const resBlock = $('<div>', { 
+                        class: 'reservation-block ' + statusClass,
+                        title: res.customer_name + ' (' + getReservationStatusText(res.status_id) + ')'
+                    });
+                    
+                    // Show name only on check-in day
+                    const fromDate = new Date(res.date_from).toISOString().split('T')[0];
+                    if (dateStr === fromDate) {
+                        resBlock.text(res.customer_name || 'Guest');
+                    }
+                    
+                    resContainer.append(resBlock);
+                });
+                cell.append(resContainer);
+            }
+            
+            grid.append(cell);
+        }
+        
+        // Next month days
+        const totalCells = firstDayWeek + daysInMonth;
+        const remainingCells = totalCells % 7 === 0 ? 0 : 7 - (totalCells % 7);
+        for (let day = 1; day <= remainingCells; day++) {
+            const cell = $('<div>', { class: 'calendar-day other-month' });
+            cell.append($('<div>', { class: 'day-number' }).text(day));
+            grid.append(cell);
+        }
+        
+        $calendar.append(grid);
+    }
+    
+    /**
+     * Render list view
+     */
+    function renderListView($calendar, reservations) {
         // Create reservations list
         const list = $('<div>', { class: 'reservations-list' });
         
