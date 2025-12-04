@@ -79,6 +79,13 @@ class GoldenStay_Manager {
             GOLDENSTAY_VERSION
         );
         
+        wp_enqueue_style( 
+            'goldenstay-calendar-buttons-css', 
+            GOLDENSTAY_PLUGIN_URL . 'assets/calendar-buttons.css',
+            array( 'goldenstay-admin-css' ),
+            GOLDENSTAY_VERSION
+        );
+        
         wp_enqueue_script( 
             'goldenstay-admin-js', 
             GOLDENSTAY_PLUGIN_URL . 'assets/admin-script.js',
