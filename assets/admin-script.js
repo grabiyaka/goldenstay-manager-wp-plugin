@@ -210,18 +210,9 @@
         properties.forEach(function(property) {
             const card = $('<div>', { class: 'goldenstay-property-card' });
             
-            // Property image
-            let imageUrl = '';
-            if (property.images && property.images.length > 0 && property.images[0].url) {
-                imageUrl = property.images[0].url;
-            } else if (property.property_images && property.property_images.length > 0) {
-                imageUrl = property.property_images[0].image_url || property.property_images[0].url;
-            }
-            
-            const image = $('<div>', { class: 'property-image' });
-            if (imageUrl) {
-                image.css('background-image', 'url(' + imageUrl + ')');
-            }
+            // Property icon (no images)
+            const icon = $('<div>', { class: 'property-icon' })
+                .html('<span class="dashicons dashicons-building"></span>');
             
             // Property details
             const details = $('<div>', { class: 'property-details' });
@@ -284,7 +275,7 @@
             
             // Assemble card
             details.append(title, meta, status, actions);
-            card.append(image, details);
+            card.append(icon, details);
             $list.append(card);
         });
     }
@@ -525,43 +516,52 @@
             
             if (dayReservations.length > 0) {
                 const resContainer = $('<div>', { class: 'day-reservations' });
-                dayReservations.forEach(res => {
-                    const statusClass = getReservationStatusClass(res.status_id);
-                    const fromDate = new Date(res.date_from).toISOString().split('T')[0];
-                    const toDate = new Date(res.date_to);
-                    toDate.setDate(toDate.getDate() - 1); // Last night, not checkout day
-                    const lastDate = toDate.toISOString().split('T')[0];
-                    
-                    // Determine position in reservation
-                    const isFirst = dateStr === fromDate;
-                    const isLast = dateStr === lastDate;
-                    const isSingle = isFirst && isLast;
-                    
-                    let positionClass = '';
-                    if (isSingle) {
-                        positionClass = 'res-single';
-                    } else if (isFirst) {
-                        positionClass = 'res-start';
-                    } else if (isLast) {
-                        positionClass = 'res-end';
-                    } else {
-                        positionClass = 'res-middle';
-                    }
-                    
-                    const resBlock = $('<div>', { 
-                        class: 'reservation-block ' + statusClass + ' ' + positionClass,
-                        title: res.customer_name + ' (' + getReservationStatusText(res.status_id) + ')\n' + 
-                               formatDate(res.date_from) + ' - ' + formatDate(res.date_to),
-                        'data-reservation-id': res.id
-                    });
-                    
-                    // Show name only on check-in day
-                    if (isFirst) {
-                        resBlock.text(res.customer_name || 'Guest');
-                    }
-                    
-                    resContainer.append(resBlock);
+                
+                // Priority: confirmed (status_id = 1) or first reservation
+                let mainReservation = dayReservations.find(r => r.status_id === 1) || dayReservations[0];
+                const otherCount = dayReservations.length - 1;
+                
+                const statusClass = getReservationStatusClass(mainReservation.status_id);
+                const fromDate = new Date(mainReservation.date_from).toISOString().split('T')[0];
+                const toDate = new Date(mainReservation.date_to);
+                toDate.setDate(toDate.getDate() - 1);
+                const lastDate = toDate.toISOString().split('T')[0];
+                
+                // Determine position in reservation
+                const isFirst = dateStr === fromDate;
+                const isLast = dateStr === lastDate;
+                const isSingle = isFirst && isLast;
+                
+                let positionClass = '';
+                if (isSingle) {
+                    positionClass = 'res-single';
+                } else if (isFirst) {
+                    positionClass = 'res-start';
+                } else if (isLast) {
+                    positionClass = 'res-end';
+                } else {
+                    positionClass = 'res-middle';
+                }
+                
+                const resBlock = $('<div>', { 
+                    class: 'reservation-block ' + statusClass + ' ' + positionClass,
+                    title: mainReservation.customer_name + ' (' + getReservationStatusText(mainReservation.status_id) + ')\n' + 
+                           formatDate(mainReservation.date_from) + ' - ' + formatDate(mainReservation.date_to) +
+                           (otherCount > 0 ? '\n+' + otherCount + ' more reservation' + (otherCount > 1 ? 's' : '') : ''),
+                    'data-reservation-id': mainReservation.id
                 });
+                
+                // Show name and count on check-in day
+                if (isFirst) {
+                    const nameText = (mainReservation.customer_name || 'Guest') + (otherCount > 0 ? ' +' + otherCount : '');
+                    resBlock.text(nameText);
+                } else if (otherCount > 0 && !isSingle) {
+                    // Show counter badge on middle/end days
+                    const badge = $('<span>', { class: 'res-count-badge' }).text('+' + otherCount);
+                    resBlock.append(badge);
+                }
+                
+                resContainer.append(resBlock);
                 cell.append(resContainer);
             }
             
@@ -584,6 +584,7 @@
      * Render list view
      */
     function renderListView($calendar, reservations) {
+        
         // Create reservations list
         const list = $('<div>', { class: 'reservations-list' });
         

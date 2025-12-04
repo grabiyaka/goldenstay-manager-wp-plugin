@@ -281,23 +281,20 @@
     border-color: steelblue;
 }
 
-.goldenstay-property-card .property-image {
-    height: 200px;
-    background-size: cover;
-    background-position: center;
-    background-color: whitesmoke;
-    position: relative;
+.goldenstay-property-card .property-icon {
+    background: linear-gradient(135deg, steelblue 0%, lightsteelblue 100%);
+    padding: 30px;
     display: flex;
     align-items: center;
     justify-content: center;
+    border-bottom: 1px solid gainsboro;
 }
 
-.goldenstay-property-card .property-image:not([style*="background-image"])::before {
-    content: "\f120";
-    font-family: dashicons;
-    font-size: 80px;
-    color: lightgray;
-    z-index: 1;
+.goldenstay-property-card .property-icon .dashicons {
+    font-size: 64px;
+    width: 64px;
+    height: 64px;
+    color: white;
 }
 
 .goldenstay-property-card .property-image::after {
@@ -497,14 +494,9 @@ body.goldenstay-modal-open {
     margin-bottom: 20px;
     padding-bottom: 15px;
     border-bottom: 2px solid gainsboro;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 15px;
 }
 
-.calendar-title h3 {
+.calendar-header h3 {
     margin: 0;
     font-size: 18px;
     color: dimgray;
@@ -515,258 +507,6 @@ body.goldenstay-modal-open {
 
 .calendar-header .dashicons {
     color: steelblue;
-}
-
-/* View Toggle */
-.calendar-view-toggle {
-    display: flex;
-    gap: 5px;
-    background: whitesmoke;
-    padding: 4px;
-    border-radius: 6px;
-}
-
-.calendar-view-toggle .view-btn {
-    background: none;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 13px;
-    color: gray;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.calendar-view-toggle .view-btn:hover {
-    background: white;
-    color: dimgray;
-}
-
-.calendar-view-toggle .view-btn.active {
-    background: steelblue;
-    color: white;
-    font-weight: 600;
-}
-
-.calendar-view-toggle .view-btn .dashicons {
-    font-size: 16px;
-    width: 16px;
-    height: 16px;
-}
-
-/* Calendar Navigation */
-.calendar-nav {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 15px;
-    margin-bottom: 20px;
-    padding: 15px;
-    background: whitesmoke;
-    border-radius: 6px;
-}
-
-.calendar-nav-btn {
-    background: white;
-    border: 1px solid gainsboro;
-    border-radius: 4px;
-    padding: 8px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.calendar-nav-btn:hover {
-    background: steelblue;
-    border-color: steelblue;
-    color: white;
-}
-
-.calendar-nav-btn .dashicons {
-    font-size: 20px;
-    width: 20px;
-    height: 20px;
-}
-
-.calendar-month-year {
-    font-size: 18px;
-    font-weight: 600;
-    color: dimgray;
-    min-width: 200px;
-    text-align: center;
-}
-
-.calendar-today-btn {
-    background: white;
-    border: 1px solid steelblue;
-    border-radius: 4px;
-    padding: 8px 16px;
-    cursor: pointer;
-    color: steelblue;
-    font-weight: 600;
-    font-size: 13px;
-    transition: all 0.2s ease;
-}
-
-.calendar-today-btn:hover {
-    background: steelblue;
-    color: white;
-}
-
-/* Calendar Grid */
-.calendar-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 1px;
-    background: gainsboro;
-    border: 1px solid gainsboro;
-    border-radius: 6px;
-    overflow: hidden;
-}
-
-.calendar-day-header {
-    background: dimgray;
-    color: white;
-    padding: 12px 8px;
-    text-align: center;
-    font-weight: 600;
-    font-size: 13px;
-    text-transform: uppercase;
-}
-
-.calendar-day {
-    background: white;
-    min-height: 100px;
-    padding: 8px;
-    position: relative;
-    transition: all 0.2s ease;
-}
-
-.calendar-day:hover {
-    background: whitesmoke;
-}
-
-.calendar-day.other-month {
-    background: whitesmoke;
-    opacity: 0.5;
-}
-
-.calendar-day.today {
-    background: lightcyan;
-    border: 2px solid steelblue;
-}
-
-.calendar-day .day-number {
-    font-size: 14px;
-    font-weight: 600;
-    color: dimgray;
-    margin-bottom: 5px;
-}
-
-.calendar-day.today .day-number {
-    color: steelblue;
-}
-
-.calendar-day.other-month .day-number {
-    color: lightgray;
-}
-
-/* Day Reservations */
-.day-reservations {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    margin-top: 5px;
-}
-
-.reservation-block {
-    padding: 4px 6px;
-    border-radius: 3px;
-    font-size: 11px;
-    font-weight: 600;
-    color: white;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    position: relative;
-}
-
-.reservation-block:hover {
-    filter: brightness(1.15);
-    z-index: 10;
-}
-
-/* Continuous reservation blocks */
-.reservation-block.res-start {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    padding-right: 2px;
-}
-
-.reservation-block.res-middle {
-    border-radius: 0;
-    padding-left: 2px;
-    padding-right: 2px;
-}
-
-.reservation-block.res-middle::before {
-    content: '';
-    position: absolute;
-    left: -1px;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: inherit;
-}
-
-.reservation-block.res-end {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    padding-left: 2px;
-}
-
-.reservation-block.res-end::before {
-    content: '';
-    position: absolute;
-    left: -1px;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: inherit;
-}
-
-.reservation-block.res-single {
-    /* Keep default rounded corners */
-}
-
-/* Status colors */
-.reservation-block.status-confirmed {
-    background: darkgreen;
-}
-
-.reservation-block.status-cancelled {
-    background: darkred;
-    text-decoration: line-through;
-    opacity: 0.7;
-}
-
-.reservation-block.status-pending {
-    background: darkgoldenrod;
-}
-
-.reservation-block.status-quote {
-    background: darkblue;
-}
-
-.reservation-block.status-lead {
-    background: indigo;
 }
 
 .no-reservations {
@@ -858,6 +598,20 @@ body.goldenstay-modal-open {
     border-left-color: indigo;
 }
 
+/* Reservation count badge */
+.res-count-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: rgba(255, 255, 255, 0.9);
+    color: dimgray;
+    padding: 2px 5px;
+    border-radius: 8px;
+    font-size: 9px;
+    font-weight: 700;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
 .reservation-dates {
     margin: 10px 0;
 }
@@ -916,6 +670,72 @@ body.goldenstay-modal-open {
 
 .reservation-comments strong {
     color: dimgray;
+}
+
+/* Calendar Grid */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 1px;
+    background: gainsboro;
+    border: 1px solid gainsboro;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.calendar-day-header {
+    background: dimgray;
+    color: white;
+    padding: 12px 8px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+}
+
+.calendar-day {
+    background: white;
+    min-height: 100px;
+    padding: 8px;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.calendar-day:hover {
+    background: whitesmoke;
+}
+
+.calendar-day.other-month {
+    background: whitesmoke;
+    opacity: 0.5;
+}
+
+.calendar-day.today {
+    background: lightcyan;
+    border: 2px solid steelblue;
+}
+
+.calendar-day .day-number {
+    font-size: 14px;
+    font-weight: 600;
+    color: dimgray;
+    margin-bottom: 5px;
+}
+
+.calendar-day.today .day-number {
+    color: steelblue;
+}
+
+.calendar-day.other-month .day-number {
+    color: lightgray;
+}
+
+/* Day Reservations */
+.day-reservations {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 5px;
 }
 
 /* Responsive */
@@ -1018,4 +838,46 @@ body.goldenstay-modal-open {
         padding: 8px 4px;
     }
 }
-
+    .calendar-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .calendar-view-toggle {
+        width: 100%;
+    }
+    
+    .calendar-view-toggle .view-btn {
+        flex: 1;
+        justify-content: center;
+    }
+    
+    .calendar-nav {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .calendar-month-year {
+        width: 100%;
+        order: -1;
+    }
+    
+    .calendar-day {
+        min-height: 80px;
+        padding: 5px;
+    }
+    
+    .calendar-day .day-number {
+        font-size: 12px;
+    }
+    
+    .reservation-block {
+        font-size: 10px;
+        padding: 3px 4px;
+    }
+    
+    .calendar-day-header {
+        font-size: 11px;
+        padding: 8px 4px;
+    }
+}
