@@ -34,6 +34,8 @@ class GoldenStay_Manager {
         add_action( 'wp_ajax_goldenstay_login', array( $this, 'ajax_login' ) );
         add_action( 'wp_ajax_goldenstay_logout', array( $this, 'ajax_logout' ) );
         add_action( 'wp_ajax_goldenstay_check_auth', array( $this, 'ajax_check_auth' ) );
+        add_action( 'wp_ajax_goldenstay_get_properties', array( $this, 'ajax_get_properties' ) );
+        add_action( 'wp_ajax_goldenstay_get_reservations', array( $this, 'ajax_get_reservations' ) );
     }
     
     /**
@@ -49,13 +51,24 @@ class GoldenStay_Manager {
             'dashicons-building',
             30
         );
+        
+        // Add Properties submenu
+        add_submenu_page(
+            'goldenstay-settings',
+            'Properties',
+            'Properties',
+            'manage_options',
+            'goldenstay-properties',
+            array( $this, 'render_properties_page' )
+        );
     }
     
     /**
      * Enqueue admin scripts and styles
      */
     public function enqueue_admin_scripts( $hook ) {
-        if ( 'toplevel_page_goldenstay-settings' !== $hook ) {
+        // Load on GoldenStay pages only
+        if ( strpos( $hook, 'goldenstay' ) === false ) {
             return;
         }
         
@@ -76,7 +89,9 @@ class GoldenStay_Manager {
         
         wp_localize_script( 'goldenstay-admin-js', 'goldenStayAdmin', array(
             'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-            'nonce' => wp_create_nonce( 'goldenstay_admin_nonce' )
+            'nonce' => wp_create_nonce( 'goldenstay_admin_nonce' ),
+            'apiUrl' => self::get_api_url(),
+            'isAuthenticated' => $this->is_authenticated()
         ));
     }
     
@@ -318,6 +333,212 @@ class GoldenStay_Manager {
             'authenticated' => $is_authenticated,
             'user_data' => $is_authenticated ? get_option( 'goldenstay_user_data' ) : null,
         ));
+    }
+    
+    /**
+     * AJAX: Get properties from API
+     */
+    public function ajax_get_properties() {
+        check_ajax_referer( 'goldenstay_admin_nonce', 'nonce' );
+        
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( array( 'message' => 'You do not have permission to perform this action' ) );
+        }
+        
+        $token = self::get_api_token();
+        if ( empty( $token ) ) {
+            wp_send_json_error( array( 'message' => 'Not authenticated. Please login first.' ) );
+        }
+        
+        $api_url = self::get_api_url();
+        
+        // Send request to API
+        $response = wp_remote_get( trailingslashit( $api_url ) . 'property', array(
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => $token,
+            ),
+            'timeout' => 30,
+        ));
+        
+        if ( is_wp_error( $response ) ) {
+            wp_send_json_error( array( 
+                'message' => 'API connection error: ' . $response->get_error_message() 
+            ));
+        }
+        
+        $status_code = wp_remote_retrieve_response_code( $response );
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+        
+        if ( $status_code === 200 ) {
+            wp_send_json_success( array( 
+                'properties' => $body,
+                'count' => is_array( $body ) ? count( $body ) : 0,
+            ));
+        } else if ( $status_code === 401 ) {
+            wp_send_json_error( array( 
+                'message' => 'Authentication expired. Please login again.',
+                'code' => 'auth_expired'
+            ));
+        } else {
+            $error_message = $body['message'] ?? $body['error'] ?? 'Failed to fetch properties';
+            wp_send_json_error( array( 'message' => $error_message ) );
+        }
+    }
+    
+    /**
+     * Render properties page
+     */
+    public function render_properties_page() {
+        $is_authenticated = $this->is_authenticated();
+        
+        if ( ! $is_authenticated ) {
+            ?>
+            <div class="wrap goldenstay-settings-wrap">
+                <h1>
+                    <span class="dashicons dashicons-building"></span>
+                    Properties
+                </h1>
+                <div class="goldenstay-settings-container">
+                    <div class="goldenstay-card">
+                        <div class="goldenstay-card-body">
+                            <div class="goldenstay-notice error">
+                                <span class="dashicons dashicons-warning"></span>
+                                Please <a href="<?php echo admin_url( 'admin.php?page=goldenstay-settings' ); ?>">login</a> first to view properties.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php
+            return;
+        }
+        
+        ?>
+        <div class="wrap goldenstay-settings-wrap">
+            <h1>
+                <span class="dashicons dashicons-building"></span>
+                Properties
+            </h1>
+            
+            <div class="goldenstay-settings-container">
+                <div class="goldenstay-card">
+                    <div class="goldenstay-card-header">
+                        <span class="dashicons dashicons-admin-multisite"></span>
+                        <h2>Your Properties</h2>
+                        <button type="button" class="button button-secondary" id="goldenstay-refresh-properties">
+                            <span class="dashicons dashicons-update"></span>
+                            Refresh
+                        </button>
+                    </div>
+                    <div class="goldenstay-card-body">
+                        <div id="goldenstay-properties-loading" class="goldenstay-loading-state">
+                            <span class="goldenstay-loader-large"></span>
+                            <p>Loading properties...</p>
+                        </div>
+                        
+                        <div id="goldenstay-properties-error" class="goldenstay-error-state" style="display: none;">
+                            <div class="goldenstay-notice error">
+                                <span class="dashicons dashicons-warning"></span>
+                                <span id="goldenstay-properties-error-message"></span>
+                            </div>
+                        </div>
+                        
+                        <div id="goldenstay-properties-empty" class="goldenstay-empty-state" style="display: none;">
+                            <span class="dashicons dashicons-building"></span>
+                            <p>No properties found</p>
+                        </div>
+                        
+                        <div id="goldenstay-properties-list" class="goldenstay-properties-grid" style="display: none;">
+                            <!-- Properties will be loaded here via JS -->
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Property Details Modal -->
+                <div id="goldenstay-property-modal" class="goldenstay-modal" style="display: none;">
+                    <div class="goldenstay-modal-overlay"></div>
+                    <div class="goldenstay-modal-container">
+                        <div class="goldenstay-modal-header">
+                            <h2 id="goldenstay-property-modal-title">Property Details</h2>
+                            <button type="button" class="goldenstay-modal-close" id="goldenstay-close-modal">
+                                <span class="dashicons dashicons-no-alt"></span>
+                            </button>
+                        </div>
+                        <div class="goldenstay-modal-body">
+                            <div id="goldenstay-property-details-loading" class="goldenstay-loading-state">
+                                <span class="goldenstay-loader-large"></span>
+                                <p>Loading reservations...</p>
+                            </div>
+                            <div id="goldenstay-property-details-content" style="display: none;">
+                                <div id="goldenstay-property-info" class="property-info-section"></div>
+                                <div id="goldenstay-reservations-calendar" class="reservations-calendar"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php
+    }
+    
+    /**
+     * AJAX: Get reservations for property
+     */
+    public function ajax_get_reservations() {
+        check_ajax_referer( 'goldenstay_admin_nonce', 'nonce' );
+        
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( array( 'message' => 'You do not have permission to perform this action' ) );
+        }
+        
+        $token = self::get_api_token();
+        if ( empty( $token ) ) {
+            wp_send_json_error( array( 'message' => 'Not authenticated. Please login first.' ) );
+        }
+        
+        $property_id = isset( $_POST['property_id'] ) ? intval( $_POST['property_id'] ) : 0;
+        if ( empty( $property_id ) ) {
+            wp_send_json_error( array( 'message' => 'Property ID is required' ) );
+        }
+        
+        $api_url = self::get_api_url();
+        
+        // Send request to API
+        $response = wp_remote_post( trailingslashit( $api_url ) . 'reservation/property', array(
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => $token,
+            ),
+            'body' => json_encode( array(
+                'ids' => array( $property_id ),
+            )),
+            'timeout' => 30,
+        ));
+        
+        if ( is_wp_error( $response ) ) {
+            wp_send_json_error( array( 
+                'message' => 'API connection error: ' . $response->get_error_message() 
+            ));
+        }
+        
+        $status_code = wp_remote_retrieve_response_code( $response );
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+        
+        if ( $status_code === 200 ) {
+            wp_send_json_success( array( 
+                'reservations' => $body,
+                'count' => is_array( $body ) ? count( $body ) : 0,
+            ));
+        } else if ( $status_code === 401 ) {
+            wp_send_json_error( array( 
+                'message' => 'Authentication expired. Please login again.',
+                'code' => 'auth_expired'
+            ));
+        } else {
+            $error_message = $body['message'] ?? $body['error'] ?? 'Failed to fetch reservations';
+            wp_send_json_error( array( 'message' => $error_message ) );
+        }
     }
     
     /**

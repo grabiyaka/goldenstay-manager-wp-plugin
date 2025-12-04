@@ -210,7 +210,464 @@
     100% { transform: rotate(360deg); }
 }
 
+/* Properties Page */
+.goldenstay-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.goldenstay-card-header h2 {
+    flex: 1;
+}
+
+.goldenstay-card-header .button {
+    margin-left: auto;
+}
+
+/* Loading, Error, Empty States */
+.goldenstay-loading-state,
+.goldenstay-error-state,
+.goldenstay-empty-state {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.goldenstay-loading-state p,
+.goldenstay-empty-state p {
+    color: dimgray;
+    font-size: 16px;
+    margin-top: 15px;
+}
+
+.goldenstay-empty-state .dashicons {
+    font-size: 64px;
+    width: 64px;
+    height: 64px;
+    color: lightgray;
+}
+
+.goldenstay-loader-large {
+    display: inline-block;
+    width: 40px;
+    height: 40px;
+    border: 4px solid gainsboro;
+    border-top: 4px solid steelblue;
+    border-radius: 50%;
+    animation: goldenstay-spin 1s linear infinite;
+}
+
+/* Properties Grid */
+.goldenstay-properties-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 20px;
+    padding: 10px 0;
+}
+
+/* Property Card */
+.goldenstay-property-card {
+    background: white;
+    border: 1px solid gainsboro;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.goldenstay-property-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+    border-color: steelblue;
+}
+
+.goldenstay-property-card .property-image {
+    height: 200px;
+    background-size: cover;
+    background-position: center;
+    background-color: whitesmoke;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.goldenstay-property-card .property-image:not([style*="background-image"])::before {
+    content: "\f120";
+    font-family: dashicons;
+    font-size: 80px;
+    color: lightgray;
+    z-index: 1;
+}
+
+.goldenstay-property-card .property-image::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(to bottom, transparent 60%, rgba(0, 0, 0, 0.3));
+}
+
+.goldenstay-property-card .property-details {
+    padding: 20px;
+}
+
+.goldenstay-property-card .property-title {
+    margin: 0 0 15px 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: dimgray;
+    line-height: 1.3;
+}
+
+.goldenstay-property-card .property-meta {
+    font-size: 13px;
+    color: gray;
+    line-height: 1.8;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid whitesmoke;
+}
+
+.goldenstay-property-card .property-meta strong {
+    color: dimgray;
+    font-weight: 600;
+}
+
+.goldenstay-property-card .property-status {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+}
+
+.goldenstay-property-card .status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.goldenstay-property-card .status-badge.status-active {
+    background: lightgreen;
+    color: darkgreen;
+}
+
+.goldenstay-property-card .status-badge.status-inactive {
+    background: lightgray;
+    color: dimgray;
+}
+
+.goldenstay-property-card .status-badge.status-archived {
+    background: lightyellow;
+    color: darkgoldenrod;
+}
+
+.goldenstay-property-card .property-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.goldenstay-property-card .property-actions .button {
+    flex: 1;
+    text-align: center;
+    justify-content: center;
+}
+
+/* Modal */
+.goldenstay-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.goldenstay-modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+}
+
+.goldenstay-modal-container {
+    position: relative;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    max-width: 900px;
+    width: 90%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    z-index: 1;
+}
+
+.goldenstay-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 25px;
+    border-bottom: 1px solid gainsboro;
+}
+
+.goldenstay-modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+    color: dimgray;
+}
+
+.goldenstay-modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 5px;
+    color: gray;
+    transition: all 0.2s ease;
+    border-radius: 4px;
+}
+
+.goldenstay-modal-close:hover {
+    background: whitesmoke;
+    color: dimgray;
+}
+
+.goldenstay-modal-close .dashicons {
+    font-size: 24px;
+    width: 24px;
+    height: 24px;
+}
+
+.goldenstay-modal-body {
+    padding: 25px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+body.goldenstay-modal-open {
+    overflow: hidden;
+}
+
+/* Property Info Section */
+.property-info-section {
+    margin-bottom: 25px;
+}
+
+.property-info-card {
+    background: whitesmoke;
+    padding: 20px;
+    border-radius: 6px;
+    border-left: 4px solid steelblue;
+}
+
+.property-info-card h3 {
+    margin: 0 0 15px 0;
+    font-size: 18px;
+    color: dimgray;
+}
+
+.property-info-details p {
+    margin: 8px 0;
+    color: gray;
+    font-size: 14px;
+}
+
+.property-info-details strong {
+    color: dimgray;
+}
+
+/* Reservations Calendar */
+.reservations-calendar {
+    margin-top: 20px;
+}
+
+.calendar-header {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid gainsboro;
+}
+
+.calendar-header h3 {
+    margin: 0;
+    font-size: 18px;
+    color: dimgray;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.calendar-header .dashicons {
+    color: steelblue;
+}
+
+.no-reservations {
+    text-align: center;
+    padding: 40px;
+    color: gray;
+    font-style: italic;
+}
+
+/* Reservations List */
+.reservations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.reservation-card {
+    background: white;
+    border: 1px solid gainsboro;
+    border-radius: 6px;
+    padding: 15px;
+    transition: all 0.2s ease;
+    border-left: 4px solid transparent;
+}
+
+.reservation-card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transform: translateX(4px);
+}
+
+.reservation-card .reservation-status {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+}
+
+.reservation-card .status-confirmed {
+    background: lightgreen;
+    color: darkgreen;
+    border-left-color: darkgreen;
+}
+
+.reservation-card .status-cancelled {
+    background: lightcoral;
+    color: darkred;
+    border-left-color: darkred;
+}
+
+.reservation-card .status-pending {
+    background: lightyellow;
+    color: darkgoldenrod;
+    border-left-color: darkgoldenrod;
+}
+
+.reservation-card .status-quote {
+    background: lightblue;
+    color: darkblue;
+    border-left-color: darkblue;
+}
+
+.reservation-card .status-lead {
+    background: lavender;
+    color: indigo;
+    border-left-color: indigo;
+}
+
+.reservation-card.status-confirmed {
+    border-left-color: darkgreen;
+}
+
+.reservation-card.status-cancelled {
+    border-left-color: darkred;
+}
+
+.reservation-card.status-pending {
+    border-left-color: darkgoldenrod;
+}
+
+.reservation-card.status-quote {
+    border-left-color: darkblue;
+}
+
+.reservation-card.status-lead {
+    border-left-color: indigo;
+}
+
+.reservation-dates {
+    margin: 10px 0;
+}
+
+.reservation-dates .date-range {
+    font-size: 15px;
+    color: dimgray;
+    margin-bottom: 5px;
+}
+
+.reservation-dates .date-range strong {
+    color: steelblue;
+}
+
+.reservation-dates .nights-count {
+    font-size: 13px;
+    color: gray;
+}
+
+.reservation-guest {
+    margin: 10px 0;
+    padding-top: 10px;
+    border-top: 1px solid whitesmoke;
+}
+
+.reservation-guest .guest-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: dimgray;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 5px;
+}
+
+.reservation-guest .guest-name .dashicons {
+    color: steelblue;
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+}
+
+.reservation-guest .guest-count {
+    font-size: 13px;
+    color: gray;
+}
+
+.reservation-comments {
+    margin-top: 10px;
+    padding: 10px;
+    background: whitesmoke;
+    border-radius: 4px;
+    font-size: 13px;
+    color: gray;
+}
+
+.reservation-comments strong {
+    color: dimgray;
+}
+
 /* Responsive */
+@media screen and (max-width: 1280px) {
+    .goldenstay-properties-grid {
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    }
+}
+
 @media screen and (max-width: 782px) {
     .goldenstay-settings-wrap {
         margin-left: -10px;
@@ -230,6 +687,35 @@
     
     .goldenstay-auth-form .regular-text {
         max-width: 100%;
+    }
+    
+    .goldenstay-properties-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .goldenstay-card-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+    
+    .goldenstay-card-header .button {
+        width: 100%;
+        margin-left: 0;
+    }
+    
+    .goldenstay-modal-container {
+        width: 95%;
+        max-height: 95vh;
+    }
+    
+    .goldenstay-modal-header,
+    .goldenstay-modal-body {
+        padding: 15px;
+    }
+    
+    .goldenstay-modal-header h2 {
+        font-size: 16px;
     }
 }
 

@@ -132,6 +132,390 @@
             alert('Settings will be saved. (Under development)');
         });
         
+        // Load properties on properties page
+        if ($('#goldenstay-properties-list').length) {
+            loadProperties();
+        }
+        
+        // Refresh properties button
+        $('#goldenstay-refresh-properties').on('click', function(e) {
+            e.preventDefault();
+            loadProperties();
+        });
+        
+    });
+    
+    /**
+     * Load properties from API
+     */
+    function loadProperties() {
+        const $loading = $('#goldenstay-properties-loading');
+        const $error = $('#goldenstay-properties-error');
+        const $empty = $('#goldenstay-properties-empty');
+        const $list = $('#goldenstay-properties-list');
+        
+        // Show loading state
+        $loading.show();
+        $error.hide();
+        $empty.hide();
+        $list.hide();
+        
+        // Send AJAX request
+        $.ajax({
+            url: goldenStayAdmin.ajaxUrl,
+            type: 'POST',
+            data: {
+                action: 'goldenstay_get_properties',
+                nonce: goldenStayAdmin.nonce
+            },
+            dataType: 'json',
+            success: function(response) {
+                $loading.hide();
+                
+                if (response.success) {
+                    const properties = response.data.properties;
+                    
+                    if (properties && properties.length > 0) {
+                        renderProperties(properties);
+                        $list.show();
+                    } else {
+                        $empty.show();
+                    }
+                } else {
+                    showPropertiesError(response.data.message);
+                    
+                    // If auth expired, show login link
+                    if (response.data.code === 'auth_expired') {
+                        $('#goldenstay-properties-error-message').append(
+                            ' <a href="' + goldenStayAdmin.adminUrl + 'admin.php?page=goldenstay-settings">Login again</a>'
+                        );
+                    }
+                }
+            },
+            error: function(xhr, status, error) {
+                $loading.hide();
+                showPropertiesError('An error occurred while loading properties. Please try again.');
+                console.error('AJAX Error:', error);
+            }
+        });
+    }
+    
+    /**
+     * Render properties list
+     */
+    function renderProperties(properties) {
+        const $list = $('#goldenstay-properties-list');
+        $list.empty();
+        
+        properties.forEach(function(property) {
+            const card = $('<div>', { class: 'goldenstay-property-card' });
+            
+            // Property image
+            let imageUrl = '';
+            if (property.images && property.images.length > 0 && property.images[0].url) {
+                imageUrl = property.images[0].url;
+            } else if (property.property_images && property.property_images.length > 0) {
+                imageUrl = property.property_images[0].image_url || property.property_images[0].url;
+            }
+            
+            const image = $('<div>', { class: 'property-image' });
+            if (imageUrl) {
+                image.css('background-image', 'url(' + imageUrl + ')');
+            }
+            
+            // Property details
+            const details = $('<div>', { class: 'property-details' });
+            
+            const title = $('<h3>', { class: 'property-title' })
+                .text(property.name || property.internal_name || 'Untitled Property');
+            
+            const metaItems = [];
+            
+            if (property.id) {
+                metaItems.push('<strong>ID:</strong> ' + property.id);
+            }
+            
+            if (property.address) {
+                metaItems.push('<strong>Address:</strong> ' + property.address);
+            }
+            
+            if (property.city || property.country) {
+                const location = [property.city, property.country].filter(Boolean).join(', ');
+                metaItems.push('<strong>Location:</strong> ' + location);
+            }
+            
+            if (property.max_guests) {
+                metaItems.push('<strong>Max Guests:</strong> ' + property.max_guests);
+            }
+            
+            if (property.bedrooms) {
+                metaItems.push('<strong>Bedrooms:</strong> ' + property.bedrooms);
+            }
+            
+            const meta = $('<div>', { class: 'property-meta' })
+                .html(metaItems.join('<br>'));
+            
+            // Property status
+            const status = $('<div>', { class: 'property-status' });
+            
+            if (property.is_active) {
+                status.append($('<span>', { class: 'status-badge status-active' }).text('Active'));
+            } else {
+                status.append($('<span>', { class: 'status-badge status-inactive' }).text('Inactive'));
+            }
+            
+            if (property.is_archived) {
+                status.append($('<span>', { class: 'status-badge status-archived' }).text('Archived'));
+            }
+            
+            // Property actions
+            const actions = $('<div>', { class: 'property-actions' });
+            
+            const viewBtn = $('<button>', { 
+                class: 'button button-primary',
+                'data-property-id': property.id
+            })
+                .html('<span class="dashicons dashicons-calendar-alt"></span> View Reservations')
+                .on('click', function() {
+                    showPropertyDetails(property);
+                });
+            
+            actions.append(viewBtn);
+            
+            // Assemble card
+            details.append(title, meta, status, actions);
+            card.append(image, details);
+            $list.append(card);
+        });
+    }
+    
+    /**
+     * Show properties error
+     */
+    function showPropertiesError(message) {
+        $('#goldenstay-properties-error-message').text(message);
+        $('#goldenstay-properties-error').show();
+    }
+    
+    /**
+     * Show property details with reservations
+     */
+    function showPropertyDetails(property) {
+        const $modal = $('#goldenstay-property-modal');
+        const $title = $('#goldenstay-property-modal-title');
+        const $loading = $('#goldenstay-property-details-loading');
+        const $content = $('#goldenstay-property-details-content');
+        
+        // Set title
+        $title.text((property.name || property.internal_name || 'Property') + ' - Reservations');
+        
+        // Show modal
+        $modal.fadeIn(200);
+        $('body').addClass('goldenstay-modal-open');
+        
+        // Show loading
+        $loading.show();
+        $content.hide();
+        
+        // Load reservations
+        loadReservations(property);
+    }
+    
+    /**
+     * Load reservations for property
+     */
+    function loadReservations(property) {
+        $.ajax({
+            url: goldenStayAdmin.ajaxUrl,
+            type: 'POST',
+            data: {
+                action: 'goldenstay_get_reservations',
+                nonce: goldenStayAdmin.nonce,
+                property_id: property.id
+            },
+            dataType: 'json',
+            success: function(response) {
+                $('#goldenstay-property-details-loading').hide();
+                
+                if (response.success) {
+                    renderPropertyDetails(property, response.data.reservations);
+                    $('#goldenstay-property-details-content').show();
+                } else {
+                    alert('Error loading reservations: ' + response.data.message);
+                    closePropertyModal();
+                }
+            },
+            error: function(xhr, status, error) {
+                $('#goldenstay-property-details-loading').hide();
+                alert('An error occurred while loading reservations.');
+                closePropertyModal();
+                console.error('AJAX Error:', error);
+            }
+        });
+    }
+    
+    /**
+     * Render property details and calendar
+     */
+    function renderPropertyDetails(property, reservations) {
+        // Render property info
+        const $info = $('#goldenstay-property-info');
+        $info.empty();
+        
+        const infoCard = $('<div>', { class: 'property-info-card' });
+        infoCard.append($('<h3>').text(property.name || property.internal_name || 'Property'));
+        
+        const infoDetails = $('<div>', { class: 'property-info-details' });
+        if (property.address) {
+            infoDetails.append($('<p>').html('<strong>Address:</strong> ' + property.address));
+        }
+        if (property.city || property.country) {
+            const location = [property.city, property.country].filter(Boolean).join(', ');
+            infoDetails.append($('<p>').html('<strong>Location:</strong> ' + location));
+        }
+        if (property.max_guests) {
+            infoDetails.append($('<p>').html('<strong>Max Guests:</strong> ' + property.max_guests));
+        }
+        
+        infoCard.append(infoDetails);
+        $info.append(infoCard);
+        
+        // Render calendar
+        renderReservationsCalendar(reservations);
+    }
+    
+    /**
+     * Render reservations calendar
+     */
+    function renderReservationsCalendar(reservations) {
+        const $calendar = $('#goldenstay-reservations-calendar');
+        $calendar.empty();
+        
+        if (!reservations || reservations.length === 0) {
+            $calendar.append($('<p>', { class: 'no-reservations' }).text('No reservations found'));
+            return;
+        }
+        
+        // Create calendar header
+        const header = $('<div>', { class: 'calendar-header' });
+        header.append($('<h3>').html('<span class="dashicons dashicons-calendar-alt"></span> Reservations (' + reservations.length + ')'));
+        $calendar.append(header);
+        
+        // Create reservations list
+        const list = $('<div>', { class: 'reservations-list' });
+        
+        // Sort reservations by date
+        reservations.sort((a, b) => new Date(a.date_from) - new Date(b.date_from));
+        
+        reservations.forEach(function(reservation) {
+            const card = $('<div>', { class: 'reservation-card' });
+            
+            // Status badge
+            const statusClass = getReservationStatusClass(reservation.status_id);
+            const statusText = getReservationStatusText(reservation.status_id);
+            const statusBadge = $('<span>', { class: 'reservation-status ' + statusClass }).text(statusText);
+            
+            // Date range
+            const dateFrom = formatDate(reservation.date_from);
+            const dateTo = formatDate(reservation.date_to);
+            const nights = calculateNights(reservation.date_from, reservation.date_to);
+            
+            const dateInfo = $('<div>', { class: 'reservation-dates' });
+            dateInfo.append($('<div>', { class: 'date-range' }).html(
+                '<strong>' + dateFrom + '</strong> → <strong>' + dateTo + '</strong>'
+            ));
+            dateInfo.append($('<div>', { class: 'nights-count' }).text(nights + ' night' + (nights !== 1 ? 's' : '')));
+            
+            // Guest info
+            const guestInfo = $('<div>', { class: 'reservation-guest' });
+            const guestName = reservation.customer_name || 'Guest';
+            guestInfo.append($('<div>', { class: 'guest-name' }).html('<span class="dashicons dashicons-admin-users"></span> ' + guestName));
+            
+            if (reservation.number_of_guests) {
+                guestInfo.append($('<div>', { class: 'guest-count' }).text(reservation.number_of_guests + ' guest' + (reservation.number_of_guests !== 1 ? 's' : '')));
+            }
+            
+            // Assemble card
+            card.append(statusBadge);
+            card.append(dateInfo);
+            card.append(guestInfo);
+            
+            if (reservation.comments) {
+                card.append($('<div>', { class: 'reservation-comments' }).html('<strong>Comments:</strong> ' + reservation.comments));
+            }
+            
+            list.append(card);
+        });
+        
+        $calendar.append(list);
+    }
+    
+    /**
+     * Get reservation status class
+     */
+    function getReservationStatusClass(statusId) {
+        const statusMap = {
+            1: 'status-confirmed',
+            2: 'status-cancelled',
+            3: 'status-pending',
+            4: 'status-quote',
+            5: 'status-lead'
+        };
+        return statusMap[statusId] || 'status-unknown';
+    }
+    
+    /**
+     * Get reservation status text
+     */
+    function getReservationStatusText(statusId) {
+        const statusMap = {
+            1: 'Confirmed',
+            2: 'Cancelled',
+            3: 'Pending',
+            4: 'Quote',
+            5: 'Lead'
+        };
+        return statusMap[statusId] || 'Unknown';
+    }
+    
+    /**
+     * Format date
+     */
+    function formatDate(dateString) {
+        const date = new Date(dateString);
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        return months[date.getMonth()] + ' ' + date.getDate() + ', ' + date.getFullYear();
+    }
+    
+    /**
+     * Calculate nights between dates
+     */
+    function calculateNights(dateFrom, dateTo) {
+        const from = new Date(dateFrom);
+        const to = new Date(dateTo);
+        const diff = Math.abs(to - from);
+        return Math.ceil(diff / (1000 * 60 * 60 * 24));
+    }
+    
+    /**
+     * Close property modal
+     */
+    function closePropertyModal() {
+        $('#goldenstay-property-modal').fadeOut(200);
+        $('body').removeClass('goldenstay-modal-open');
+    }
+    
+    // Close modal on button click
+    $(document).on('click', '#goldenstay-close-modal', closePropertyModal);
+    
+    // Close modal on overlay click
+    $(document).on('click', '.goldenstay-modal-overlay', closePropertyModal);
+    
+    // Close modal on ESC key
+    $(document).on('keydown', function(e) {
+        if (e.key === 'Escape' && $('#goldenstay-property-modal').is(':visible')) {
+            closePropertyModal();
+        }
     });
 
 })(jQuery);
