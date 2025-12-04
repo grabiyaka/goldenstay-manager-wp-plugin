@@ -527,14 +527,36 @@
                 const resContainer = $('<div>', { class: 'day-reservations' });
                 dayReservations.forEach(res => {
                     const statusClass = getReservationStatusClass(res.status_id);
+                    const fromDate = new Date(res.date_from).toISOString().split('T')[0];
+                    const toDate = new Date(res.date_to);
+                    toDate.setDate(toDate.getDate() - 1); // Last night, not checkout day
+                    const lastDate = toDate.toISOString().split('T')[0];
+                    
+                    // Determine position in reservation
+                    const isFirst = dateStr === fromDate;
+                    const isLast = dateStr === lastDate;
+                    const isSingle = isFirst && isLast;
+                    
+                    let positionClass = '';
+                    if (isSingle) {
+                        positionClass = 'res-single';
+                    } else if (isFirst) {
+                        positionClass = 'res-start';
+                    } else if (isLast) {
+                        positionClass = 'res-end';
+                    } else {
+                        positionClass = 'res-middle';
+                    }
+                    
                     const resBlock = $('<div>', { 
-                        class: 'reservation-block ' + statusClass,
-                        title: res.customer_name + ' (' + getReservationStatusText(res.status_id) + ')'
+                        class: 'reservation-block ' + statusClass + ' ' + positionClass,
+                        title: res.customer_name + ' (' + getReservationStatusText(res.status_id) + ')\n' + 
+                               formatDate(res.date_from) + ' - ' + formatDate(res.date_to),
+                        'data-reservation-id': res.id
                     });
                     
                     // Show name only on check-in day
-                    const fromDate = new Date(res.date_from).toISOString().split('T')[0];
-                    if (dateStr === fromDate) {
+                    if (isFirst) {
                         resBlock.text(res.customer_name || 'Guest');
                     }
                     
