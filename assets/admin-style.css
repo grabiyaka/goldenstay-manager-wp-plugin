@@ -1,0 +1,235 @@
+/**
+ * GoldenStay Admin Styles
+ */
+
+.goldenstay-settings-wrap {
+    background: #f0f0f1;
+    margin: 20px 0 0 -20px;
+    padding: 20px;
+}
+
+.goldenstay-settings-wrap h1 {
+    background: #fff;
+    padding: 20px;
+    margin: 0 0 20px 0;
+    border-left: 4px solid #2271b1;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.goldenstay-settings-wrap h1 .dashicons {
+    font-size: 32px;
+    width: 32px;
+    height: 32px;
+    vertical-align: middle;
+    margin-right: 10px;
+    color: #2271b1;
+}
+
+.goldenstay-settings-container {
+    max-width: 900px;
+}
+
+.goldenstay-card {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+    margin-bottom: 20px;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.goldenstay-card-header {
+    background: #f6f7f7;
+    border-bottom: 1px solid #c3c4c7;
+    padding: 15px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.goldenstay-card-header.success {
+    background: #d5e8d4;
+    border-bottom-color: #82c366;
+}
+
+.goldenstay-card-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1d2327;
+}
+
+.goldenstay-card-header .dashicons {
+    font-size: 24px;
+    width: 24px;
+    height: 24px;
+    color: #2271b1;
+}
+
+.goldenstay-card-header.success .dashicons {
+    color: #2e7d32;
+}
+
+.goldenstay-card-body {
+    padding: 20px;
+}
+
+/* Login form */
+.goldenstay-auth-form .form-table th {
+    width: 150px;
+    padding: 15px 10px 15px 0;
+}
+
+.goldenstay-auth-form .form-table td {
+    padding: 15px 10px;
+}
+
+.goldenstay-auth-form .regular-text {
+    width: 100%;
+    max-width: 400px;
+}
+
+.goldenstay-auth-form .description {
+    color: #646970;
+    font-size: 13px;
+    margin-top: 5px;
+}
+
+/* User info */
+.user-info {
+    background: #f6f7f7;
+    padding: 15px;
+    border-radius: 4px;
+    margin-bottom: 20px;
+}
+
+.user-info p {
+    margin: 10px 0;
+    font-size: 14px;
+}
+
+.user-info strong {
+    display: inline-block;
+    min-width: 80px;
+    color: #1d2327;
+}
+
+.user-info code {
+    background: #fff;
+    padding: 2px 8px;
+    border: 1px solid #c3c4c7;
+    border-radius: 3px;
+    font-size: 12px;
+    color: #d63638;
+}
+
+/* Messages */
+#goldenstay-login-message {
+    margin: 15px 0;
+}
+
+.goldenstay-notice {
+    padding: 12px 16px;
+    border-left: 4px solid;
+    margin: 15px 0;
+    border-radius: 2px;
+}
+
+.goldenstay-notice.error {
+    background: #fcf0f1;
+    border-left-color: #d63638;
+    color: #50575e;
+}
+
+.goldenstay-notice.success {
+    background: #d5e8d4;
+    border-left-color: #00a32a;
+    color: #1d2327;
+}
+
+.goldenstay-notice.info {
+    background: #e5f5fa;
+    border-left-color: #2271b1;
+    color: #1d2327;
+}
+
+.goldenstay-notice .dashicons {
+    vertical-align: middle;
+    margin-right: 5px;
+}
+
+/* Buttons */
+.button .dashicons {
+    line-height: 28px;
+    margin-right: 5px;
+    font-size: 16px;
+    width: 16px;
+    height: 16px;
+    vertical-align: middle;
+}
+
+.button-large .dashicons {
+    line-height: 32px;
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+}
+
+#goldenstay-login-btn,
+#goldenstay-logout-btn {
+    transition: all 0.2s ease;
+}
+
+#goldenstay-login-btn:disabled,
+#goldenstay-logout-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+#goldenstay-login-btn:not(:disabled):hover,
+#goldenstay-logout-btn:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+/* Loader */
+.goldenstay-loader {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #2271b1;
+    border-radius: 50%;
+    animation: goldenstay-spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-left: 8px;
+}
+
+@keyframes goldenstay-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive */
+@media screen and (max-width: 782px) {
+    .goldenstay-settings-wrap {
+        margin-left: -10px;
+        padding: 10px;
+    }
+    
+    .goldenstay-card-body {
+        padding: 15px;
+    }
+    
+    .goldenstay-auth-form .form-table th,
+    .goldenstay-auth-form .form-table td {
+        display: block;
+        width: 100%;
+        padding: 10px 0;
+    }
+    
+    .goldenstay-auth-form .regular-text {
+        max-width: 100%;
+    }
+}
+
