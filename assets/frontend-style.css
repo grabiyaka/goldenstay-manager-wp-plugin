@@ -1,0 +1,383 @@
+/**
+ * GoldenStay Frontend Styles
+ */
+
+/* Global */
+.goldenstay-properties-wrapper,
+.goldenstay-property-single {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+/* Loading Spinner */
+.gs-loading-spinner {
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.gs-spinner {
+    border: 4px solid whitesmoke;
+    border-top: 4px solid steelblue;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    animation: gs-spin 1s linear infinite;
+    margin: 0 auto 20px;
+}
+
+@keyframes gs-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.gs-loading-spinner p {
+    color: gray;
+    font-size: 16px;
+}
+
+/* Error Message */
+.gs-error {
+    background: lightcoral;
+    color: darkred;
+    padding: 15px;
+    border-radius: 6px;
+    border-left: 4px solid darkred;
+}
+
+/* Filter Bar */
+.gs-filter-bar {
+    background: whitesmoke;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 30px;
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.gs-search-input,
+.gs-filter-select {
+    flex: 1;
+    min-width: 200px;
+    padding: 10px 15px;
+    border: 1px solid lightgray;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.gs-search-input:focus,
+.gs-filter-select:focus {
+    outline: none;
+    border-color: steelblue;
+    box-shadow: 0 0 0 3px rgba(70, 130, 180, 0.1);
+}
+
+/* Properties Grid */
+.gs-properties-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 25px;
+}
+
+/* Property Card */
+.gs-property-card {
+    background: white;
+    border: 1px solid gainsboro;
+    border-radius: 8px;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.gs-property-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    border-color: steelblue;
+}
+
+.gs-property-icon {
+    background: linear-gradient(135deg, steelblue 0%, lightsteelblue 100%);
+    padding: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gs-property-icon svg {
+    width: 64px;
+    height: 64px;
+    fill: white;
+}
+
+.gs-property-details {
+    padding: 20px;
+}
+
+.gs-property-title {
+    margin: 0 0 12px 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: dimgray;
+}
+
+.gs-property-meta {
+    font-size: 14px;
+    color: gray;
+    line-height: 1.8;
+    margin-bottom: 15px;
+}
+
+.gs-property-meta strong {
+    color: dimgray;
+}
+
+.gs-property-price {
+    font-size: 24px;
+    font-weight: 700;
+    color: steelblue;
+    margin-bottom: 15px;
+}
+
+.gs-property-price small {
+    font-size: 14px;
+    color: gray;
+    font-weight: 400;
+}
+
+/* Buttons */
+.gs-btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.gs-btn-primary {
+    background: steelblue;
+    color: white;
+}
+
+.gs-btn-primary:hover {
+    background: #3b6a94;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(70, 130, 180, 0.3);
+}
+
+.gs-btn-secondary {
+    background: white;
+    color: dimgray;
+    border: 1px solid lightgray;
+}
+
+.gs-btn-secondary:hover {
+    background: whitesmoke;
+    border-color: dimgray;
+}
+
+.gs-btn-block {
+    width: 100%;
+    justify-content: center;
+}
+
+/* Property Single Page */
+.gs-property-info {
+    background: white;
+    border-radius: 8px;
+    padding: 30px;
+    margin-bottom: 30px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.gs-property-info h1 {
+    margin: 0 0 20px 0;
+    color: dimgray;
+}
+
+.gs-property-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-top: 20px;
+}
+
+.gs-info-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    background: whitesmoke;
+    border-radius: 6px;
+}
+
+.gs-info-item strong {
+    color: dimgray;
+}
+
+/* Booking Section */
+.gs-booking-section {
+    background: white;
+    border-radius: 8px;
+    padding: 30px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.gs-booking-section h2 {
+    margin: 0 0 25px 0;
+    color: dimgray;
+}
+
+.gs-booking-calendar {
+    margin-bottom: 30px;
+}
+
+/* Booking Form */
+.gs-booking-form {
+    background: whitesmoke;
+    padding: 25px;
+    border-radius: 8px;
+    margin-top: 25px;
+}
+
+.gs-booking-form h3 {
+    margin: 0 0 20px 0;
+    color: dimgray;
+}
+
+.gs-form-row {
+    margin-bottom: 20px;
+}
+
+.gs-form-row label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: dimgray;
+}
+
+.gs-form-row input,
+.gs-form-row select {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid lightgray;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.gs-form-row input:focus,
+.gs-form-row select:focus {
+    outline: none;
+    border-color: steelblue;
+    box-shadow: 0 0 0 3px rgba(70, 130, 180, 0.1);
+}
+
+.gs-form-actions {
+    display: flex;
+    gap: 15px;
+    margin-top: 25px;
+}
+
+/* Calendar */
+.gs-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+    background: gainsboro;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.gs-calendar-header {
+    background: dimgray;
+    color: white;
+    padding: 12px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.gs-calendar-day {
+    background: white;
+    padding: 15px 10px;
+    text-align: center;
+    min-height: 60px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.gs-calendar-day:hover:not(.blocked):not(.other-month) {
+    background: lightcyan;
+}
+
+.gs-calendar-day.other-month {
+    background: whitesmoke;
+    color: lightgray;
+}
+
+.gs-calendar-day.today {
+    background: lightcyan;
+    font-weight: 700;
+}
+
+.gs-calendar-day.blocked {
+    background: lightcoral;
+    color: darkred;
+    cursor: not-allowed;
+}
+
+.gs-calendar-day.selected {
+    background: steelblue;
+    color: white;
+    font-weight: 700;
+}
+
+.gs-calendar-day.in-range {
+    background: lightsteelblue;
+    color: white;
+}
+
+/* Success Message */
+.gs-success {
+    background: lightgreen;
+    color: darkgreen;
+    padding: 20px;
+    border-radius: 8px;
+    border-left: 4px solid darkgreen;
+    margin: 20px 0;
+}
+
+/* Responsive */
+@media screen and (max-width: 768px) {
+    .gs-properties-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .gs-filter-bar {
+        flex-direction: column;
+    }
+    
+    .gs-search-input,
+    .gs-filter-select {
+        width: 100%;
+    }
+    
+    .gs-form-actions {
+        flex-direction: column;
+    }
+    
+    .gs-btn {
+        width: 100%;
+    }
+}
+
+
+
+
