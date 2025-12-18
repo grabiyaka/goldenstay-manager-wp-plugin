@@ -330,3 +330,4 @@ class GoldenStay_Ajax {
 
 
 
+

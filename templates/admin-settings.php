@@ -148,3 +148,4 @@ $user_data = $is_authenticated ? get_option( 'goldenstay_user_data' ) : null;
 
 
 
+
