@@ -30,6 +30,8 @@ class GoldenStay_Manager {
         require_once GOLDENSTAY_PLUGIN_DIR . 'includes/class-admin.php';
         require_once GOLDENSTAY_PLUGIN_DIR . 'includes/class-ajax.php';
         require_once GOLDENSTAY_PLUGIN_DIR . 'includes/class-frontend.php';
+        require_once GOLDENSTAY_PLUGIN_DIR . 'includes/class-accommodation-mapping.php';
+        require_once GOLDENSTAY_PLUGIN_DIR . 'includes/class-hbook-compat.php';
     }
     
     /**
@@ -41,6 +43,12 @@ class GoldenStay_Manager {
         
         // Initialize AJAX
         GoldenStay_Ajax::init();
+
+        // Accommodation ↔ API property mapping
+        GoldenStay_Accommodation_Mapping::get_instance();
+
+        // HBook compatibility layer (shortcodes + assets) for Adomus theme
+        GoldenStay_HBook_Compat::get_instance();
         
         // Register shortcodes
         add_shortcode( 'goldenstay_properties', array( 'GoldenStay_Frontend', 'properties_list_shortcode' ) );

@@ -348,7 +348,9 @@
     /**
      * Render property details and calendar
      */
+    let currentPropertyId = null;
     function renderPropertyDetails(property, reservations) {
+        currentPropertyId = property && property.id ? property.id : null;
         // Render property info
         const $info = $('#goldenstay-property-info');
         $info.empty();
@@ -543,9 +545,10 @@
                     positionClass = 'res-middle';
                 }
                 
+                const isHidden = !!mainReservation.is_hidden;
                 const resBlock = $('<div>', { 
-                    class: 'reservation-block ' + statusClass + ' ' + positionClass,
-                    title: mainReservation.customer_name + ' (' + getReservationStatusText(mainReservation.status_id) + ')\n' + 
+                    class: 'reservation-block ' + statusClass + ' ' + positionClass + (isHidden ? ' res-hidden' : ''),
+                    title: (isHidden ? '[Hidden on site] ' : '') + (mainReservation.customer_name || 'Guest') + ' (' + getReservationStatusText(mainReservation.status_id) + ')\n' + 
                            formatDate(mainReservation.date_from) + ' - ' + formatDate(mainReservation.date_to) +
                            (otherCount > 0 ? '\n+' + otherCount + ' more reservation' + (otherCount > 1 ? 's' : '') : ''),
                     'data-reservation-id': mainReservation.id
@@ -593,6 +596,9 @@
         
         reservations.forEach(function(reservation) {
             const card = $('<div>', { class: 'reservation-card' });
+            if (reservation.is_hidden) {
+                card.addClass('is-hidden');
+            }
             
             // Status badge
             const statusClass = getReservationStatusClass(reservation.status_id);
@@ -623,6 +629,64 @@
             card.append(statusBadge);
             card.append(dateInfo);
             card.append(guestInfo);
+
+            // Visibility toggle (WP-side override)
+            const toggleWrap = $('<div>', { class: 'reservation-visibility-toggle' });
+            const toggleBtn = $('<button>', {
+                type: 'button',
+                class: 'button button-secondary gs-toggle-reservation-visibility' + (reservation.is_hidden ? ' is-hidden' : ''),
+                'data-reservation-id': reservation.id,
+            }).text(reservation.is_hidden ? 'Hidden on site' : 'Visible on site');
+
+            toggleBtn.on('click', function() {
+                if (!currentPropertyId) {
+                    alert('Property ID is missing in current context.');
+                    return;
+                }
+
+                const $btn = $(this);
+                const nextHidden = reservation.is_hidden ? 0 : 1;
+                $btn.prop('disabled', true).text('Saving...');
+
+                $.ajax({
+                    url: goldenStayAdmin.ajaxUrl,
+                    type: 'POST',
+                    data: {
+                        action: 'goldenstay_toggle_reservation_visibility',
+                        nonce: goldenStayAdmin.nonce,
+                        property_id: currentPropertyId,
+                        reservation_id: reservation.id,
+                        is_hidden: nextHidden
+                    },
+                    dataType: 'json',
+                    success: function(response) {
+                        if (!response.success) {
+                            alert('Error: ' + (response.data && response.data.message ? response.data.message : 'Failed to toggle'));
+                            $btn.prop('disabled', false).text(reservation.is_hidden ? 'Hidden on site' : 'Visible on site');
+                            return;
+                        }
+
+                        reservation.is_hidden = !!response.data.is_hidden;
+
+                        // Update button + card state
+                        $btn
+                            .toggleClass('is-hidden', reservation.is_hidden)
+                            .prop('disabled', false)
+                            .text(reservation.is_hidden ? 'Hidden on site' : 'Visible on site');
+                        card.toggleClass('is-hidden', reservation.is_hidden);
+
+                        // Re-render calendar view blocks with updated hidden flag
+                        renderReservationsCalendar(calendarReservations);
+                    },
+                    error: function() {
+                        alert('An error occurred while saving visibility.');
+                        $btn.prop('disabled', false).text(reservation.is_hidden ? 'Hidden on site' : 'Visible on site');
+                    }
+                });
+            });
+
+            toggleWrap.append(toggleBtn);
+            card.append(toggleWrap);
             
             if (reservation.comments) {
                 card.append($('<div>', { class: 'reservation-comments' }).html('<strong>Comments:</strong> ' + reservation.comments));

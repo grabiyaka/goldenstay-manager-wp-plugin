@@ -532,6 +532,24 @@ body.goldenstay-modal-open {
     border-left: 4px solid transparent;
 }
 
+.reservation-card.is-hidden {
+    opacity: 0.7;
+}
+
+.reservation-visibility-toggle {
+    margin-top: 10px;
+}
+
+.gs-toggle-reservation-visibility.is-hidden {
+    border-color: lightcoral;
+    color: darkred;
+}
+
+.reservation-block.res-hidden {
+    opacity: 0.35;
+    filter: grayscale(1);
+}
+
 .reservation-card:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     transform: translateX(4px);

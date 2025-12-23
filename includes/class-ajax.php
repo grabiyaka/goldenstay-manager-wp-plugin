@@ -16,12 +16,27 @@ class GoldenStay_Ajax {
         add_action( 'wp_ajax_goldenstay_check_auth', array( __CLASS__, 'ajax_check_auth' ) );
         add_action( 'wp_ajax_goldenstay_get_properties', array( __CLASS__, 'ajax_get_properties' ) );
         add_action( 'wp_ajax_goldenstay_get_reservations', array( __CLASS__, 'ajax_get_reservations' ) );
+        add_action( 'wp_ajax_goldenstay_toggle_reservation_visibility', array( __CLASS__, 'ajax_toggle_reservation_visibility' ) );
         
         // Public AJAX (no auth required)
         add_action( 'wp_ajax_nopriv_goldenstay_get_properties_public', array( __CLASS__, 'ajax_get_properties' ) );
         add_action( 'wp_ajax_nopriv_goldenstay_get_property_public', array( __CLASS__, 'ajax_get_property_public' ) );
         add_action( 'wp_ajax_nopriv_goldenstay_check_availability', array( __CLASS__, 'ajax_check_availability' ) );
         add_action( 'wp_ajax_nopriv_goldenstay_create_booking', array( __CLASS__, 'ajax_create_booking' ) );
+    }
+
+    private static function get_hidden_reservations_map() {
+        $hidden = get_option( 'goldenstay_hidden_reservations', array() );
+        return is_array( $hidden ) ? $hidden : array();
+    }
+
+    private static function get_hidden_reservation_ids_for_property( $property_id ) {
+        $hidden = self::get_hidden_reservations_map();
+        $ids = isset( $hidden[ $property_id ] ) ? $hidden[ $property_id ] : array();
+        if ( ! is_array( $ids ) ) {
+            return array();
+        }
+        return array_values( array_unique( array_map( 'intval', $ids ) ) );
     }
     
     /**
@@ -196,6 +211,15 @@ class GoldenStay_Ajax {
         $body = json_decode( wp_remote_retrieve_body( $response ), true );
         
         if ( $status_code === 200 ) {
+            $hidden_ids = self::get_hidden_reservation_ids_for_property( $property_id );
+            if ( is_array( $body ) ) {
+                foreach ( $body as &$reservation ) {
+                    if ( is_array( $reservation ) && isset( $reservation['id'] ) ) {
+                        $reservation['is_hidden'] = in_array( intval( $reservation['id'] ), $hidden_ids, true );
+                    }
+                }
+                unset( $reservation );
+            }
             wp_send_json_success( array( 
                 'reservations' => $body,
                 'count' => is_array( $body ) ? count( $body ) : 0,
@@ -209,6 +233,55 @@ class GoldenStay_Ajax {
             $error_message = $body['message'] ?? $body['error'] ?? 'Failed to fetch reservations';
             wp_send_json_error( array( 'message' => $error_message ) );
         }
+    }
+
+    /**
+     * AJAX: Toggle reservation visibility on the website (WordPress-side override)
+     */
+    public static function ajax_toggle_reservation_visibility() {
+        check_ajax_referer( 'goldenstay_admin_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( array( 'message' => 'You do not have permission to perform this action' ) );
+        }
+
+        $property_id = isset( $_POST['property_id'] ) ? intval( $_POST['property_id'] ) : 0;
+        $reservation_id = isset( $_POST['reservation_id'] ) ? intval( $_POST['reservation_id'] ) : 0;
+        $is_hidden = isset( $_POST['is_hidden'] ) ? (bool) intval( $_POST['is_hidden'] ) : false;
+
+        if ( ! $property_id || ! $reservation_id ) {
+            wp_send_json_error( array( 'message' => 'Property ID and Reservation ID are required' ) );
+        }
+
+        $hidden = self::get_hidden_reservations_map();
+        $property_hidden = isset( $hidden[ $property_id ] ) && is_array( $hidden[ $property_id ] )
+            ? array_values( array_unique( array_map( 'intval', $hidden[ $property_id ] ) ) )
+            : array();
+
+        if ( $is_hidden ) {
+            if ( ! in_array( $reservation_id, $property_hidden, true ) ) {
+                $property_hidden[] = $reservation_id;
+            }
+        } else {
+            $property_hidden = array_values(
+                array_filter(
+                    $property_hidden,
+                    function( $id ) use ( $reservation_id ) {
+                        return intval( $id ) !== intval( $reservation_id );
+                    }
+                )
+            );
+        }
+
+        $hidden[ $property_id ] = $property_hidden;
+        update_option( 'goldenstay_hidden_reservations', $hidden );
+
+        wp_send_json_success( array(
+            'property_id' => $property_id,
+            'reservation_id' => $reservation_id,
+            'is_hidden' => $is_hidden,
+            'hidden_ids' => $property_hidden,
+        ) );
     }
     
     /**

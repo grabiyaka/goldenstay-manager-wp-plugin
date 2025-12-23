@@ -81,6 +81,7 @@ class GoldenStay_Admin {
         
         wp_localize_script( 'goldenstay-admin-js', 'goldenStayAdmin', array(
             'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+            'adminUrl' => admin_url(),
             'nonce' => wp_create_nonce( 'goldenstay_admin_nonce' ),
             'apiUrl' => GoldenStay_Manager::get_api_url(),
             'isAuthenticated' => $this->is_authenticated()
