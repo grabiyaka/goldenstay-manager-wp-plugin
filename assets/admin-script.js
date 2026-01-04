@@ -125,11 +125,31 @@
         $('#goldenstay-api-settings-form').on('submit', function(e) {
             e.preventDefault();
             
-            const $form = $(this);
             const apiUrl = $('#api_url').val();
             
-            // TODO: Add AJAX save functionality
-            alert('Settings will be saved. (Under development)');
+            $.ajax({
+                url: goldenStayAdmin.ajaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'goldenstay_save_api_settings',
+                    nonce: goldenStayAdmin.nonce,
+                    api_url: apiUrl
+                },
+                dataType: 'json',
+                success: function(response) {
+                    if (response.success) {
+                        alert('✅ ' + response.data.message + ': ' + response.data.api_url);
+                        // Reload so all localized vars / options refresh
+                        location.reload();
+                    } else {
+                        alert('❌ ' + (response.data && response.data.message ? response.data.message : 'Failed to save settings'));
+                    }
+                },
+                error: function(xhr, status, error) {
+                    alert('❌ Failed to save settings. Check console for details.');
+                    console.error('AJAX Error:', error);
+                }
+            });
         });
         
         // Load properties on properties page

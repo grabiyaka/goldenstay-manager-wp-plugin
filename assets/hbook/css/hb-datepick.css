@@ -13,6 +13,23 @@
 	display: none;
 	position: absolute;
 	z-index: 99999;
+	background: #fff;
+	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+	padding: 12px 14px 6px;
+	border-radius: 12px;
+	min-width: 620px;
+}
+
+.hb-datepick-popup,
+.hb-datepick-wrapper {
+	background: #fff;
+	border-radius: 8px;
+}
+
+.hb-datepick-wrapper:after {
+	content: '';
+	display: table;
+	clear: both;
 }
 
 .hb-dp-rtl .hb-dp-month {

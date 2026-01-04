@@ -14,6 +14,7 @@ class GoldenStay_Ajax {
         add_action( 'wp_ajax_goldenstay_login', array( __CLASS__, 'ajax_login' ) );
         add_action( 'wp_ajax_goldenstay_logout', array( __CLASS__, 'ajax_logout' ) );
         add_action( 'wp_ajax_goldenstay_check_auth', array( __CLASS__, 'ajax_check_auth' ) );
+        add_action( 'wp_ajax_goldenstay_save_api_settings', array( __CLASS__, 'ajax_save_api_settings' ) );
         add_action( 'wp_ajax_goldenstay_get_properties', array( __CLASS__, 'ajax_get_properties' ) );
         add_action( 'wp_ajax_goldenstay_get_reservations', array( __CLASS__, 'ajax_get_reservations' ) );
         add_action( 'wp_ajax_goldenstay_toggle_reservation_visibility', array( __CLASS__, 'ajax_toggle_reservation_visibility' ) );
@@ -123,6 +124,29 @@ class GoldenStay_Ajax {
             'authenticated' => $is_authenticated,
             'user_data' => $is_authenticated ? get_option( 'goldenstay_user_data' ) : null,
         ));
+    }
+
+    /**
+     * AJAX: Save API settings (for authenticated users)
+     */
+    public static function ajax_save_api_settings() {
+        check_ajax_referer( 'goldenstay_admin_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( array( 'message' => 'You do not have permission to perform this action' ) );
+        }
+
+        $api_url = esc_url_raw( $_POST['api_url'] ?? '' );
+        if ( empty( $api_url ) ) {
+            wp_send_json_error( array( 'message' => 'API URL is required' ) );
+        }
+
+        update_option( 'goldenstay_api_url', $api_url );
+
+        wp_send_json_success( array(
+            'message' => 'Settings saved',
+            'api_url' => $api_url,
+        ) );
     }
     
     /**

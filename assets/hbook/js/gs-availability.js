@@ -47,18 +47,18 @@ jQuery( document ).ready( function( $ ) {
 					on_date_returned['title'] = hb_text.legend_closed;
 					on_date_returned['dateClass'] += ' hb-dp-day-closed';
 				} else if ( hb_status_days[ str_date ] ) {
-					switch ( hb_status_days[ str_date ] ) {
-						case 'hb-day-fully-taken':
-							on_date_returned['title'] = hb_text.legend_occupied;
-							break;
-						case 'hb-day-taken-start':
-							on_date_returned['title'] = hb_text.legend_check_out_only;
-							break;
-						case 'hb-day-taken-end':
-							on_date_returned['title'] = hb_text.legend_check_in_only;
-							break;
+					var status = hb_status_days[ str_date ] + '';
+
+					// hb_status_days can contain multiple classes (e.g. "hb-day-fully-taken hb-day-taken-end")
+					if ( status.indexOf( 'hb-day-fully-taken' ) !== -1 ) {
+						on_date_returned['title'] = hb_text.legend_occupied;
+					} else if ( status.indexOf( 'hb-day-taken-start' ) !== -1 ) {
+						on_date_returned['title'] = hb_text.legend_check_out_only;
+					} else if ( status.indexOf( 'hb-day-taken-end' ) !== -1 ) {
+						on_date_returned['title'] = hb_text.legend_check_in_only;
 					}
-					on_date_returned['dateClass'] += ' ' + hb_status_days[ str_date ];
+
+					on_date_returned['dateClass'] += ' ' + status;
 					on_date_returned['content'] = '<span class="hb-day-taken-content">' + day + '</span>';
 				} else {
 					var price = hb_price_days[ str_date ];
