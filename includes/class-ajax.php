@@ -151,10 +151,28 @@ class GoldenStay_Ajax {
         }
         update_option( 'goldenstay_calendar_horizon_months', $months );
 
+        // Optional: fee IDs to include in /reservation/calc-prices
+        $fee_ids_raw = isset( $_POST['calc_prices_fee_ids'] ) ? sanitize_text_field( $_POST['calc_prices_fee_ids'] ) : '';
+        $fee_ids = array();
+        if ( $fee_ids_raw ) {
+            $parts = preg_split( '/[,\s]+/', $fee_ids_raw );
+            if ( is_array( $parts ) ) {
+                foreach ( $parts as $p ) {
+                    $id = intval( trim( (string) $p ) );
+                    if ( $id > 0 ) {
+                        $fee_ids[] = $id;
+                    }
+                }
+            }
+        }
+        $fee_ids = array_values( array_unique( $fee_ids ) );
+        update_option( 'goldenstay_calc_prices_fee_ids', $fee_ids );
+
         wp_send_json_success( array(
             'message' => 'Settings saved',
             'api_url' => $api_url,
             'calendar_horizon_months' => $months,
+            'calc_prices_fee_ids' => $fee_ids,
         ) );
     }
     

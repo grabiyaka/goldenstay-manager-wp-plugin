@@ -58,6 +58,10 @@ class GoldenStay_HBook_Compat {
         add_shortcode( 'hb_starting_price', array( $this, 'shortcode_not_implemented' ) );
         add_shortcode( 'hb_reservation_summary', array( $this, 'shortcode_not_implemented' ) );
         add_shortcode( 'hb_paypal_confirmation', array( $this, 'shortcode_not_implemented' ) );
+
+        // Public AJAX: calculate availability + price breakdown for booking form (replacement for HBook search results).
+        add_action( 'wp_ajax_nopriv_goldenstay_hb_calc_prices', array( $this, 'ajax_hb_calc_prices' ) );
+        add_action( 'wp_ajax_goldenstay_hb_calc_prices', array( $this, 'ajax_hb_calc_prices' ) );
     }
 
     public function shortcode_not_implemented() {
@@ -131,6 +135,30 @@ class GoldenStay_HBook_Compat {
         );
         wp_add_inline_script( 'gs-hb-datepick', $inline, 'before' );
         wp_enqueue_script( 'gs-hb-datepick' );
+
+        // Minimal booking form behaviour (AJAX search + price breakdown toggle).
+        wp_enqueue_style(
+            'gs-hb-booking',
+            GOLDENSTAY_PLUGIN_URL . 'assets/hbook/css/gs-booking.css',
+            array( 'gs-hb-front-end', 'gs-hb-datepick' ),
+            GOLDENSTAY_VERSION
+        );
+        wp_enqueue_script(
+            'gs-hb-booking',
+            GOLDENSTAY_PLUGIN_URL . 'assets/hbook/js/gs-booking.js',
+            array( 'jquery', 'gs-hb-datepick', 'gs-hb-utils' ),
+            GOLDENSTAY_VERSION,
+            true
+        );
+        wp_localize_script(
+            'gs-hb-booking',
+            'gsHbBooking',
+            array(
+                'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+                'nonce' => wp_create_nonce( 'goldenstay_frontend_nonce' ),
+                'currency' => '€',
+            )
+        );
 
         $this->base_assets_enqueued = true;
     }
@@ -286,6 +314,407 @@ class GoldenStay_HBook_Compat {
         }
 
         return wp_remote_get( $url, $args );
+    }
+
+    public function ajax_hb_calc_prices() {
+        check_ajax_referer( 'goldenstay_frontend_nonce', 'nonce' );
+
+        $accom_id = isset( $_POST['accom_id'] ) ? intval( $_POST['accom_id'] ) : 0;
+        $check_in_raw = isset( $_POST['check_in'] ) ? sanitize_text_field( $_POST['check_in'] ) : '';
+        $check_out_raw = isset( $_POST['check_out'] ) ? sanitize_text_field( $_POST['check_out'] ) : '';
+        $adults = isset( $_POST['adults'] ) ? intval( $_POST['adults'] ) : 1;
+        $children = isset( $_POST['children'] ) ? intval( $_POST['children'] ) : 0;
+
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log(
+                '[GS HB] ajax_hb_calc_prices request: ' . wp_json_encode(
+                    array(
+                        'accom_id' => $accom_id,
+                        'check_in' => $check_in_raw,
+                        'check_out' => $check_out_raw,
+                        'adults' => $adults,
+                        'children' => $children,
+                    )
+                )
+            );
+        }
+
+        $result = $this->build_hb_calc_prices_result(
+            $accom_id,
+            $check_in_raw,
+            $check_out_raw,
+            $adults,
+            $children
+        );
+
+        if ( empty( $result['success'] ) ) {
+            wp_send_json_error(
+                array(
+                    'message' => isset( $result['message'] ) ? $result['message'] : 'Failed to calculate price',
+                )
+            );
+        }
+
+        wp_send_json_success(
+            array(
+                'available' => ! empty( $result['available'] ),
+                'mark_up' => isset( $result['mark_up'] ) ? $result['mark_up'] : '',
+            )
+        );
+    }
+
+    private function normalize_date_ymd( $value ) {
+        $value = trim( (string) $value );
+        if ( ! $value ) {
+            return '';
+        }
+
+        $formats = array( 'Y-m-d', 'd-m-Y', 'd/m/Y' );
+        foreach ( $formats as $format ) {
+            $dt = DateTime::createFromFormat( $format, $value );
+            $errors = DateTime::getLastErrors();
+            if ( $dt && empty( $errors['warning_count'] ) && empty( $errors['error_count'] ) ) {
+                return $dt->format( 'Y-m-d' );
+            }
+        }
+
+        // Fallback: try native parsing (last resort)
+        $ts = strtotime( $value );
+        if ( $ts ) {
+            return date( 'Y-m-d', $ts );
+        }
+
+        return '';
+    }
+
+    private function diff_nights( $date_from, $date_to ) {
+        $from_ts = strtotime( $date_from );
+        $to_ts = strtotime( $date_to );
+        if ( ! $from_ts || ! $to_ts ) {
+            return 0;
+        }
+        $diff = intval( floor( ( $to_ts - $from_ts ) / DAY_IN_SECONDS ) );
+        return max( 0, $diff );
+    }
+
+    private function format_price( $amount ) {
+        $num = is_numeric( $amount ) ? floatval( $amount ) : 0;
+        return '€' . number_format_i18n( $num, 2 );
+    }
+
+    private function get_property_additional_fees_by_id( $property_id ) {
+        $property_id = intval( $property_id );
+        if ( ! $property_id ) {
+            return array();
+        }
+
+        $transient_key = 'gs_prop_fees_v1_' . $property_id;
+        $cached = get_transient( $transient_key );
+        if ( is_array( $cached ) ) {
+            return $cached;
+        }
+
+        $response = $this->api_get_json( 'property/' . $property_id, true );
+        if ( is_wp_error( $response ) ) {
+            return array();
+        }
+
+        $status_code = wp_remote_retrieve_response_code( $response );
+        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( $status_code !== 200 || ! is_array( $data ) ) {
+            return array();
+        }
+
+        $fees = isset( $data['additional_fees'] ) && is_array( $data['additional_fees'] )
+            ? $data['additional_fees']
+            : array();
+
+        $map = array();
+        foreach ( $fees as $fee ) {
+            if ( ! is_array( $fee ) || empty( $fee['id'] ) ) {
+                continue;
+            }
+            $map[ intval( $fee['id'] ) ] = $fee;
+        }
+
+        // 6 hours: fees do not change often.
+        set_transient( $transient_key, $map, 6 * HOUR_IN_SECONDS );
+        return $map;
+    }
+
+    private function get_calc_prices_fee_ids( $property_id, $fees_by_id = array() ) {
+        $default_fees = get_option( 'goldenstay_calc_prices_fee_ids', array() );
+        $fees = is_array( $default_fees ) ? array_values( array_unique( array_map( 'intval', $default_fees ) ) ) : array();
+        $fees = array_values( array_filter( $fees ) );
+        if ( count( $fees ) ) {
+            return $fees;
+        }
+
+        // Auto-mode: include non-optional fees and "enabled by default" fees for the property.
+        if ( ! is_array( $fees_by_id ) || ! count( $fees_by_id ) ) {
+            $fees_by_id = $this->get_property_additional_fees_by_id( $property_id );
+        }
+
+        $out = array();
+        foreach ( $fees_by_id as $fee_id => $fee ) {
+            if ( ! is_array( $fee ) ) {
+                continue;
+            }
+            $is_optional = ! empty( $fee['optional'] );
+            $enable_by_default = ! empty( $fee['enable_by_default'] );
+            if ( ! $is_optional || $enable_by_default ) {
+                $out[] = intval( $fee_id );
+            }
+        }
+
+        return array_values( array_unique( array_filter( $out ) ) );
+    }
+
+    private function is_available_for_period( $property_id, $date_from, $date_to ) {
+        $property_id = intval( $property_id );
+        if ( ! $property_id || ! $date_from || ! $date_to ) {
+            return false;
+        }
+
+        $last_night = date( 'Y-m-d', strtotime( $date_to . ' -1 day' ) );
+        if ( strtotime( $last_night ) < strtotime( $date_from ) ) {
+            return false;
+        }
+
+        $endpoint = sprintf(
+            'property/calendar_day/period/%d/%s/%s',
+            $property_id,
+            rawurlencode( $date_from ),
+            rawurlencode( $last_night )
+        );
+
+        $response = $this->api_get_json( $endpoint, true );
+        if ( is_wp_error( $response ) ) {
+            return false;
+        }
+
+        $status_code = wp_remote_retrieve_response_code( $response );
+        $days = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( $status_code !== 200 || ! is_array( $days ) ) {
+            return false;
+        }
+
+        foreach ( $days as $day ) {
+            if ( is_array( $day ) && $this->is_calendar_day_taken( $day ) ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function pick_calc_prices_variant( $calc_prices, $guests ) {
+        if ( ! is_array( $calc_prices ) ) {
+            return null;
+        }
+        $key = strval( intval( $guests ) > 0 ? intval( $guests ) : 1 );
+        if ( isset( $calc_prices[ $key ] ) && is_array( $calc_prices[ $key ] ) ) {
+            return $calc_prices[ $key ];
+        }
+        foreach ( $calc_prices as $variant ) {
+            if ( is_array( $variant ) && isset( $variant['total'] ) ) {
+                return $variant;
+            }
+        }
+        return null;
+    }
+
+    private function build_hb_price_breakdown_markup( $variant, $date_from, $date_to, $nights, $guests, $fees_by_id = array() ) {
+        $rent = isset( $variant['rent'] ) ? floatval( $variant['rent'] ) : 0;
+        $day_rate = isset( $variant['day_rate'] ) ? floatval( $variant['day_rate'] ) : 0;
+        $service_amount = isset( $variant['service_amount'] ) ? floatval( $variant['service_amount'] ) : 0;
+
+        $services = isset( $variant['services'] ) && is_array( $variant['services'] ) ? $variant['services'] : array();
+
+        $out = '';
+
+        // Rent (villa price)
+        $out .= '<span class="hb-price-breakdown-accom">';
+        $out .= '<span class="hb-price-breakdown-title">';
+        $out .= 'Prijs villa: <span class="hb-price-breakdown-amount">' . esc_html( $this->format_price( $rent ) ) . '</span>';
+        $out .= '</span>';
+        $out .= '<span class="hb-price-breakdown-section">';
+        $out .= 'Van <span class="hb-format-date">' . esc_html( $date_from ) . '</span> tot <span class="hb-format-date">' . esc_html( $date_to ) . '</span>';
+        $out .= ' (' . intval( $nights ) . ' nachten x ' . esc_html( $this->format_price( $day_rate ) ) . ') : ';
+        $out .= esc_html( $this->format_price( $rent ) );
+        $out .= '</span>';
+        $out .= '</span>';
+
+        // Fees / taxes / services
+        $out .= '<span class="hb-price-breakdown-fees">';
+        $out .= '<span class="hb-price-breakdown-title">';
+        $out .= 'Toeslagen: <span class="hb-price-breakdown-amount">' . esc_html( $this->format_price( $service_amount ) ) . '</span>';
+        $out .= '</span>';
+
+        foreach ( $services as $service ) {
+            if ( ! is_array( $service ) ) {
+                continue;
+            }
+            $desc = isset( $service['description'] ) ? (string) $service['description'] : '';
+            if ( $desc === '' ) {
+                continue;
+            }
+            $amount = isset( $service['amount'] ) ? floatval( $service['amount'] ) : 0;
+
+            $detail = '';
+            $fee_id = isset( $service['property_additional_fee_id'] ) ? intval( $service['property_additional_fee_id'] ) : 0;
+            if ( $fee_id && isset( $fees_by_id[ $fee_id ] ) && is_array( $fees_by_id[ $fee_id ] ) ) {
+                $fee = $fees_by_id[ $fee_id ];
+                $discriminator = isset( $fee['discriminator_id'] ) ? intval( $fee['discriminator_id'] ) : 0;
+                $value = isset( $fee['value'] ) ? floatval( $fee['value'] ) : 0;
+
+                if ( $value > 0 ) {
+                    if ( $discriminator === 2 ) { // FixedPerDay
+                        $detail = '(' . intval( $nights ) . ' nachten x ' . $this->format_price( $value ) . ')';
+                    } else if ( $discriminator === 5 ) { // FixedAmountPerPerson
+                        $detail = '(' . intval( $guests ) . ' personen x ' . $this->format_price( $value ) . ')';
+                    } else if ( $discriminator === 6 ) { // FixedAmountPerPersonPerDay
+                        $detail = '(' . intval( $guests ) . ' personen x ' . intval( $nights ) . ' nachten x ' . $this->format_price( $value ) . ')';
+                    } else if ( $discriminator === 3 ) { // IndependentPercentage
+                        $detail = '(' . esc_html( rtrim( rtrim( number_format_i18n( $value * 100, 2 ), '0' ), ',' ) ) . '%)';
+                    }
+                }
+            }
+
+            $out .= '<span class="hb-price-breakdown-section">';
+            $out .= esc_html( $desc );
+            if ( $detail ) {
+                $out .= ' ' . $detail;
+            }
+            $out .= ': ' . esc_html( $this->format_price( $amount ) );
+            $out .= '</span>';
+        }
+
+        $out .= '</span>';
+        return $out;
+    }
+
+    private function build_hb_calc_prices_result( $accom_id, $check_in_raw, $check_out_raw, $adults, $children ) {
+        $accom_id = intval( $accom_id );
+        if ( ! $accom_id ) {
+            return array( 'success' => false, 'message' => 'Accommodation ID is required' );
+        }
+
+        $token = GoldenStay_Manager::get_api_token();
+        if ( ! $token ) {
+            return array( 'success' => false, 'message' => 'GoldenStay API token is missing. Please login in WP admin.' );
+        }
+
+        $property_id = GoldenStay_Accommodation_Mapping::get_property_id_for_accom( $accom_id );
+        if ( ! $property_id ) {
+            return array( 'success' => false, 'message' => 'Property mapping is missing for this accommodation' );
+        }
+
+        $date_from = $this->normalize_date_ymd( $check_in_raw );
+        $date_to = $this->normalize_date_ymd( $check_out_raw );
+        if ( ! $date_from || ! $date_to ) {
+            return array( 'success' => false, 'message' => 'Please select check-in and check-out dates' );
+        }
+        if ( strtotime( $date_to ) <= strtotime( $date_from ) ) {
+            return array( 'success' => false, 'message' => 'Check-out date must be after check-in date' );
+        }
+
+        $adults = max( 0, intval( $adults ) );
+        $children = max( 0, intval( $children ) );
+        $guests = max( 1, $adults + $children );
+        $nights = $this->diff_nights( $date_from, $date_to );
+
+        $accom_name = get_the_title( $accom_id );
+        if ( ! $accom_name ) {
+            $accom_name = 'Accommodation';
+        }
+
+        $available = $this->is_available_for_period( $property_id, $date_from, $date_to );
+        if ( ! $available ) {
+            $msg = esc_html( $accom_name ) . ' is niet beschikbaar op de door jou gekozen data';
+            $mark_up = '<div class="hb-accom-step-wrapper hb-step-wrapper">' .
+                '<div class="hb-accom-list">' .
+                    '<div class="hb-accom hb-clearfix">' .
+                        '<div class="hb-accom-desc">' . $msg . '</div>' .
+                    '</div>' .
+                '</div>' .
+            '</div>';
+            return array(
+                'success' => true,
+                'available' => false,
+                'mark_up' => $mark_up,
+            );
+        }
+
+        $fees_by_id = $this->get_property_additional_fees_by_id( $property_id );
+        $fee_ids = $this->get_calc_prices_fee_ids( $property_id, $fees_by_id );
+
+        $response = $this->api_post_json(
+            'reservation/calc-prices',
+            array(
+                'fees' => $fee_ids,
+                'property_id' => intval( $property_id ),
+                'date_from' => $date_from,
+                'date_to' => $date_to,
+                'number_of_guests' => intval( $guests ),
+                'number_of_adults' => intval( $adults ),
+                'number_of_children' => intval( $children ),
+                'units' => 1,
+                'rent' => null,
+                'auto_recalculation' => true,
+            ),
+            true
+        );
+
+        if ( is_wp_error( $response ) ) {
+            return array( 'success' => false, 'message' => 'API connection error: ' . $response->get_error_message() );
+        }
+
+        $status_code = wp_remote_retrieve_response_code( $response );
+        $calc_prices = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( $status_code !== 200 || ! is_array( $calc_prices ) ) {
+            return array( 'success' => false, 'message' => 'Failed to calculate price' );
+        }
+
+        $variant = $this->pick_calc_prices_variant( $calc_prices, $guests );
+        if ( ! is_array( $variant ) ) {
+            return array( 'success' => false, 'message' => 'Failed to calculate price' );
+        }
+
+        $total = isset( $variant['total'] ) ? floatval( $variant['total'] ) : 0;
+        $caption = 'Prijs voor ' . intval( $nights ) . ' nachten';
+        $show_text = 'Toon de prijs in detail';
+        $hide_text = 'Verberg prijs details';
+
+        $msg_available = esc_html( $accom_name ) . ' is beschikbaar op de door jou gekozen data';
+        $price_breakdown = $this->build_hb_price_breakdown_markup( $variant, $date_from, $date_to, $nights, $guests, $fees_by_id );
+
+        $mark_up = '' .
+            '<div class="hb-accom-step-wrapper hb-step-wrapper">' .
+                '<div class="hb-accom-list">' .
+                    '<div class="hb-accom hb-clearfix">' .
+                        '<div class="hb-accom-desc">' . $msg_available . '</div>' .
+                        '<div class="hb-accom-price-total hb-clearfix">' .
+                            '<div class="hb-accom-price">' . esc_html( $this->format_price( $total ) ) . '</div>' .
+                            '<div class="hb-accom-price-caption">' . esc_html( $caption ) .
+                                '<br/>' .
+                                '<span class="hb-accom-price-caption-dash">&nbsp;-&nbsp;</span>' .
+                                '<a class="hb-view-price-breakdown" href="#">' .
+                                    '<span class="hb-price-bd-show-text">' . esc_html( $show_text ) . '</span>' .
+                                    '<span class="hb-price-bd-hide-text">' . esc_html( $hide_text ) . '</span>' .
+                                '</a>' .
+                            '</div>' .
+                        '</div>' .
+                        '<p class="hb-price-breakdown">' . $price_breakdown . '</p>' .
+                    '</div>' .
+                '</div>' .
+            '</div>';
+
+        return array(
+            'success' => true,
+            'available' => true,
+            'mark_up' => $mark_up,
+        );
     }
 
     private function fetch_reservations_for_property( $property_id, $date_from = null, $date_to = null ) {
@@ -918,6 +1347,13 @@ class GoldenStay_HBook_Compat {
 
         $check_in = isset( $_POST['hb-check-in-hidden'] ) ? sanitize_text_field( $_POST['hb-check-in-hidden'] ) : '';
         $check_out = isset( $_POST['hb-check-out-hidden'] ) ? sanitize_text_field( $_POST['hb-check-out-hidden'] ) : '';
+        // Fallback: if booking JS isn't present, read visible date inputs.
+        if ( ! $check_in && isset( $_POST['hb-check-in-date'] ) ) {
+            $check_in = sanitize_text_field( $_POST['hb-check-in-date'] );
+        }
+        if ( ! $check_out && isset( $_POST['hb-check-out-date'] ) ) {
+            $check_out = sanitize_text_field( $_POST['hb-check-out-date'] );
+        }
         $adults = isset( $_POST['hb-adults'] ) ? sanitize_text_field( $_POST['hb-adults'] ) : '';
         $children = isset( $_POST['hb-children'] ) ? sanitize_text_field( $_POST['hb-children'] ) : '';
 
@@ -1025,7 +1461,7 @@ class GoldenStay_HBook_Compat {
         }
 
         // Wrap to provide booking rules for hb-datepick.js
-        $out = '<div class="hbook-wrapper" ' .
+        $out = '<div class="hbook-wrapper" data-gs-hb-compat="1" ' .
             'data-booking-rules=\'' . esc_attr( wp_json_encode( $wrapper_rules ) ) . '\' ' .
             ( $page_accom_id ? 'data-page-accom-id="' . esc_attr( $page_accom_id ) . '" ' : '' ) .
             '>';
@@ -1053,8 +1489,21 @@ class GoldenStay_HBook_Compat {
 
         $out .= $markup;
 
-        if ( $search_only === 'no' ) {
+        // Placeholder for AJAX-rendered results (and server-side fallback below)
+        $out .= '<div class="gs-hb-search-results" aria-live="polite">';
+        if ( $page_accom_id && $check_in && $check_out && $search_only === 'no' ) {
+            $calc = $this->build_hb_calc_prices_result( $page_accom_id, $check_in, $check_out, $adults, $children );
+            if ( ! empty( $calc['success'] ) && ! empty( $calc['mark_up'] ) ) {
+                $out .= $calc['mark_up'];
+            } else if ( ! empty( $calc['message'] ) ) {
+                $out .= '<p class="hb-search-error" style="display:block;">' . esc_html( $calc['message'] ) . '</p>';
+            }
+        }
+        $out .= '</div>';
+
+        if ( $search_only === 'no' && ! $page_accom_id ) {
             // Show calendars (prices + blocked days) for all accommodations as a simple replacement for HBook results.
+            // On accommodation pages we do not render the whole list to avoid duplication/clutter.
             $out .= $this->render_accom_calendars();
         }
 

@@ -9,6 +9,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 $is_authenticated = ! empty( get_option( 'goldenstay_api_token' ) );
 $user_data = $is_authenticated ? get_option( 'goldenstay_user_data' ) : null;
+$fee_ids_opt = get_option( 'goldenstay_calc_prices_fee_ids', array() );
+$fee_ids_str = is_array( $fee_ids_opt ) ? implode( ',', array_map( 'intval', $fee_ids_opt ) ) : '';
 ?>
 
 <div class="wrap goldenstay-settings-wrap">
@@ -79,6 +81,25 @@ $user_data = $is_authenticated ? get_option( 'goldenstay_user_data' ) : null;
                                         />
                                         <p class="description">
                                             How many months ahead to allow date selection (e.g. 24 = 2 years, 36 = 3 years).
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">
+                                        <label for="calc_prices_fee_ids">Calc-prices fee IDs</label>
+                                    </th>
+                                    <td>
+                                        <input
+                                            type="text"
+                                            id="calc_prices_fee_ids"
+                                            name="calc_prices_fee_ids"
+                                            class="regular-text"
+                                            value="<?php echo esc_attr( $fee_ids_str ); ?>"
+                                            placeholder="e.g. 3372,3373,3382"
+                                        />
+                                        <p class="description">
+                                            Optional. Comma-separated Additional Fee IDs to include in price calculation (<code>/reservation/calc-prices</code>).
+                                            Leave empty to auto-include non-optional fees.
                                         </p>
                                     </td>
                                 </tr>
