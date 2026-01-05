@@ -126,6 +126,7 @@
             e.preventDefault();
             
             const apiUrl = $('#api_url').val();
+            const calendarHorizonMonths = $('#calendar_horizon_months').val();
             
             $.ajax({
                 url: goldenStayAdmin.ajaxUrl,
@@ -133,7 +134,8 @@
                 data: {
                     action: 'goldenstay_save_api_settings',
                     nonce: goldenStayAdmin.nonce,
-                    api_url: apiUrl
+                    api_url: apiUrl,
+                    calendar_horizon_months: calendarHorizonMonths
                 },
                 dataType: 'json',
                 success: function(response) {

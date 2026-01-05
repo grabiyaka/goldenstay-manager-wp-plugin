@@ -143,9 +143,18 @@ class GoldenStay_Ajax {
 
         update_option( 'goldenstay_api_url', $api_url );
 
+        $months = isset( $_POST['calendar_horizon_months'] ) ? intval( $_POST['calendar_horizon_months'] ) : 24;
+        if ( $months < 3 ) {
+            $months = 3;
+        } else if ( $months > 60 ) {
+            $months = 60;
+        }
+        update_option( 'goldenstay_calendar_horizon_months', $months );
+
         wp_send_json_success( array(
             'message' => 'Settings saved',
             'api_url' => $api_url,
+            'calendar_horizon_months' => $months,
         ) );
     }
     

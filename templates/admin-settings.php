@@ -62,6 +62,26 @@ $user_data = $is_authenticated ? get_option( 'goldenstay_user_data' ) : null;
                                         <p class="description">Your API service URL</p>
                                     </td>
                                 </tr>
+                                <tr>
+                                    <th scope="row">
+                                        <label for="calendar_horizon_months">Calendar horizon (months)</label>
+                                    </th>
+                                    <td>
+                                        <input
+                                            type="number"
+                                            id="calendar_horizon_months"
+                                            name="calendar_horizon_months"
+                                            class="small-text"
+                                            min="3"
+                                            max="60"
+                                            step="1"
+                                            value="<?php echo esc_attr( (int) get_option( 'goldenstay_calendar_horizon_months', 24 ) ); ?>"
+                                        />
+                                        <p class="description">
+                                            How many months ahead to allow date selection (e.g. 24 = 2 years, 36 = 3 years).
+                                        </p>
+                                    </td>
+                                </tr>
                             </table>
                             <button type="submit" class="button button-primary">Save Settings</button>
                         </form>

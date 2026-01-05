@@ -23,6 +23,7 @@ class GoldenStay_HBook_Compat {
     private $last_calendar_days_raw = array();
     private $last_calendar_fetch_debug = null;
     private $last_calendar_fetch_response = null;
+    private $last_calendar_days_sample = array();
 
     public static function get_instance() {
         if ( null === self::$instance ) {
@@ -374,6 +375,7 @@ class GoldenStay_HBook_Compat {
             'rawSample' => is_array( $raw_days_snapshot ) ? array_slice( $raw_days_snapshot, 0, 20 ) : array(),
             'reservationsCount' => is_array( $normalized ) ? count( $normalized ) : 0,
             'responseMeta' => $this->last_calendar_fetch_response,
+            'calendarDaysSample' => $this->last_calendar_days_sample,
         );
 
         return $cache[ $cache_key ];
@@ -400,12 +402,13 @@ class GoldenStay_HBook_Compat {
         }
 
         $status_code = wp_remote_retrieve_response_code( $response );
-        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+        $body = wp_remote_retrieve_body( $response );
+        $data = json_decode( $body, true );
         $this->last_calendar_fetch_response = array(
             'endpoint' => $endpoint,
             'url' => $full_url,
             'statusCode' => $status_code,
-            'bodySample' => substr( wp_remote_retrieve_body( $response ), 0, 400 ),
+            'bodySample' => substr( $body, 0, 400 ),
         );
         if ( $status_code !== 200 || ! is_array( $data ) ) {
             $this->last_calendar_days_raw = array();
@@ -413,6 +416,7 @@ class GoldenStay_HBook_Compat {
         }
 
         $this->last_calendar_days_raw = $data;
+        $this->last_calendar_days_sample = array_slice( $data, 0, 50 );
 
         return $this->calendar_days_to_reservations( $data );
     }
@@ -833,6 +837,7 @@ class GoldenStay_HBook_Compat {
                 'priceDaysCount' => count( $price_days ),
                 'fetchDebug' => $this->last_calendar_fetch_debug,
                 'fetchResponse' => $this->last_calendar_fetch_response,
+                'calendarDaysSample' => $this->last_calendar_days_sample,
             )
         );
 
@@ -995,15 +1000,20 @@ class GoldenStay_HBook_Compat {
         if ( $page_accom_id ) {
             $mapped_property_id = GoldenStay_Accommodation_Mapping::get_property_id_for_accom( $page_accom_id );
             if ( $mapped_property_id ) {
-                // Datepick shows 2 months on desktop; we prefetch a bit ahead (cached).
-                list( $range_from, $range_to ) = $this->compute_prefetch_range(
-                    array(
-                        array(
-                            'cols' => 2,
-                            'rows' => 1,
-                        ),
-                    )
-                );
+                // Datepick window (min/max selectable dates).
+                // Previously we used compute_prefetch_range() which capped at ~4-6 months for performance.
+                // For real booking flows we need a larger horizon (the PMS calendar is typically initialized for years ahead).
+                $now_ts = current_time( 'timestamp' );
+                $range_from = date( 'Y-m-d', $now_ts );
+                $month_start = date( 'Y-m-01', $now_ts );
+                $months_prefetch = intval( get_option( 'goldenstay_calendar_horizon_months', 24 ) );
+                if ( $months_prefetch < 3 ) {
+                    $months_prefetch = 3;
+                } else if ( $months_prefetch > 60 ) {
+                    $months_prefetch = 60;
+                }
+                $range_to = date( 'Y-m-d', strtotime( '+' . $months_prefetch . ' months', strtotime( $month_start ) ) );
+
                 $hidden_ids = $this->get_hidden_reservation_ids_for_property( $mapped_property_id );
                 $reservations = $this->fetch_reservations_for_property( $mapped_property_id, $range_from, $range_to );
                 $status_days_for_datepick = $this->build_status_days( $reservations, $range_from, $range_to, $hidden_ids );
@@ -1036,6 +1046,7 @@ class GoldenStay_HBook_Compat {
                     'bookingWindow' => $datepick_window,
                     'fetchDebug' => $this->last_calendar_fetch_debug,
                     'fetchResponse' => $this->last_calendar_fetch_response,
+                    'calendarDaysSample' => $this->last_calendar_days_sample,
                 )
             );
         }
