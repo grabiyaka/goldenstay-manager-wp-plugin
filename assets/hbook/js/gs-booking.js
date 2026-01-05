@@ -159,6 +159,417 @@
     return false
   })
 
+  function formatNumberNl(amount) {
+    var num = parseFloat(amount)
+    if (!Number.isFinite(num)) num = 0
+    var parts = num.toFixed(2).split('.')
+    // thousands separator "." and decimal ","
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+    return parts[0] + ',' + parts[1]
+  }
+
+  function updateOptionsTotalPrice($wrapper) {
+    if (!$wrapper || !$wrapper.length) return
+
+    var sum = 0
+    $wrapper.find('.gs-hb-fee-checkbox:checked').each(function () {
+      var price = parseFloat($(this).data('price'))
+      if (Number.isFinite(price)) sum += price
+    })
+
+    var $total = $wrapper.find('.hb-options-total-price').first()
+    if (!$total.length) return
+
+    if (Math.abs(sum) < 0.005) {
+      $total.hide()
+      return
+    }
+
+    var isNegative = sum < 0
+    var abs = Math.abs(sum)
+    $total.find('.hb-price-placeholder-minus').css('display', isNegative ? 'inline' : 'none')
+    $total.find('.hb-price-placeholder').html(formatNumberNl(abs))
+    $total.show()
+  }
+
+  function getSelectedFeeIds($wrapper) {
+    var ids = []
+    if (!$wrapper || !$wrapper.length) return ids
+    $wrapper.find('.gs-hb-fee-checkbox:checked').each(function () {
+      var id = parseInt($(this).data('fee-id'), 10)
+      if (Number.isFinite(id) && id > 0) ids.push(id)
+    })
+    return ids
+  }
+
+  function setSelectedFeesHidden($wrapper, ids) {
+    var $hidden = $wrapper.find('.gs-hb-selected-fees')
+    if (!$hidden.length) return
+    $hidden.val(Array.isArray(ids) ? ids.join(',') : '')
+  }
+
+  function readFeeMeta($wrapper) {
+    if (!$wrapper || !$wrapper.length) return {}
+
+    var raw =
+      String($wrapper.find('.gs-hb-fees-form').attr('data-fee-meta') || '') ||
+      String($wrapper.find('.gs-hb-summary-wrapper').attr('data-fee-meta') || '') ||
+      '{}'
+
+    try {
+      var parsed = JSON.parse(raw)
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch (_) {
+      return {}
+    }
+  }
+
+  function updateDetailsSummary($wrapper, recalcData) {
+    if (!$wrapper || !$wrapper.length) return
+
+    var $details = $wrapper.find('.gs-hb-details-step').first()
+    if (!$details.length) return
+
+    var $summary = $details.find('.gs-hb-summary-wrapper').first()
+    if (!$summary.length) return
+
+    // Update selection info from data-* (set by PHP)
+    var checkIn = String($summary.attr('data-check-in') || '')
+    var checkOut = String($summary.attr('data-check-out') || '')
+    var nights = parseInt($summary.attr('data-nights'), 10)
+    var adults = parseInt($summary.attr('data-adults'), 10)
+    var accomName = String($summary.attr('data-accom-name') || '')
+
+    if (checkIn) $details.find('.gs-hb-summary-check-in').text(checkIn)
+    if (checkOut) $details.find('.gs-hb-summary-check-out').text(checkOut)
+    if (Number.isFinite(nights)) $details.find('.gs-hb-summary-nights').text(String(nights))
+    if (Number.isFinite(adults)) $details.find('.gs-hb-summary-adults').text(String(adults))
+    if (accomName) $details.find('.gs-hb-summary-accom').text(accomName)
+
+    var data = recalcData || $wrapper.data('gsHbLastRecalc') || null
+    if (!data) return
+
+    if (data.total_formatted) {
+      $details.find('.gs-hb-summary-total-value').text(String(data.total_formatted))
+      $summary.attr('data-current-total', String(data.total))
+    }
+
+    var feeMeta = readFeeMeta($wrapper)
+    var feeAmounts = data.fee_amounts || {}
+
+    var items = []
+    Object.keys(feeAmounts).forEach(function (feeIdStr) {
+      var feeId = parseInt(feeIdStr, 10)
+      if (!Number.isFinite(feeId) || feeId <= 0) return
+
+      var entry = feeAmounts[feeIdStr]
+      if (!entry) return
+
+      var meta = feeMeta[String(feeId)] || feeMeta[feeId] || {}
+      var name = meta && meta.name ? String(meta.name) : ''
+      var order = meta && meta.order !== undefined ? parseInt(meta.order, 10) : 999999
+
+      items.push({
+        id: feeId,
+        name: name || 'Fee',
+        order: Number.isFinite(order) ? order : 999999,
+        formatted: entry.formatted ? String(entry.formatted) : null,
+      })
+    })
+
+    items.sort(function (a, b) {
+      if (a.order !== b.order) return a.order - b.order
+      return a.id - b.id
+    })
+
+    var $feesBox = $details.find('.gs-hb-summary-fees').first()
+    if ($feesBox.length) {
+      $feesBox.empty()
+      items.forEach(function (it) {
+        var text = it.name + ': ' + (it.formatted || '')
+        $('<div>', { class: 'gs-hb-summary-line' }).text(text).appendTo($feesBox)
+      })
+    }
+  }
+
+  function recalcPricesWithFees($wrapper, selectedFeeIds) {
+    if (!$wrapper || !$wrapper.length) return
+
+    var $feesForm = $wrapper.find('.gs-hb-fees-form').first()
+    if (!$feesForm.length) return
+
+    if (!window.gsHbBooking || !gsHbBooking.ajaxUrl || !gsHbBooking.nonce) {
+      debugLog('[GS HB] recalc-prices: gsHbBooking config missing', window.gsHbBooking)
+      return
+    }
+
+    var accomId = parseInt($feesForm.data('accom-id'), 10) || 0
+    var checkIn = String($feesForm.data('check-in') || '')
+    var checkOut = String($feesForm.data('check-out') || '')
+    var adults = parseInt($feesForm.data('adults'), 10)
+    var children = parseInt($feesForm.data('children'), 10)
+    var baseFeeIds = String($feesForm.attr('data-base-fee-ids') || '')
+    var toggleFeeIds = String($feesForm.attr('data-toggle-fee-ids') || '')
+
+    if (!Number.isFinite(adults)) adults = 1
+    if (!Number.isFinite(children)) children = 0
+
+    var payload = {
+      action: 'goldenstay_hb_recalc_prices',
+      nonce: gsHbBooking.nonce,
+      accom_id: accomId,
+      check_in: checkIn,
+      check_out: checkOut,
+      adults: adults,
+      children: children,
+      fee_ids: Array.isArray(selectedFeeIds) ? selectedFeeIds.join(',') : '',
+      base_fee_ids: baseFeeIds,
+      toggle_fee_ids: toggleFeeIds,
+    }
+
+    // Avoid double submits when user toggles quickly
+    $feesForm.find('input, button').prop('disabled', true)
+
+    $.ajax({
+      url: gsHbBooking.ajaxUrl,
+      type: 'POST',
+      dataType: 'json',
+      data: payload,
+      success: function (response) {
+        debugLog('[GS HB] recalc-prices response:', response)
+        $feesForm.find('input, button').prop('disabled', false)
+
+        if (!response || !response.success || !response.data) {
+          var message =
+            (response && response.data && response.data.message) ||
+            'Failed to recalculate price. Please try again.'
+          var $searchForm = $wrapper.find('form.hb-booking-search-form').first()
+          if ($searchForm.length) showFormError($searchForm, message)
+          return
+        }
+
+        // Update total (step 2)
+        if (response.data.total_formatted) {
+          $wrapper.find('.gs-hb-total-price-value').text(String(response.data.total_formatted))
+          // Also update the main price in step 1, so it stays consistent when going back.
+          $wrapper.find('.hb-accom-price').first().text(String(response.data.total_formatted))
+
+          // Track numeric total for later steps
+          if (response.data.total !== undefined) {
+            $feesForm.attr('data-current-total', String(response.data.total))
+          }
+        }
+
+        // Update amounts for fees returned by API
+        var feeAmounts = response.data.fee_amounts || {}
+        Object.keys(feeAmounts).forEach(function (feeIdStr) {
+          var feeId = parseInt(feeIdStr, 10)
+          if (!Number.isFinite(feeId) || feeId <= 0) return
+
+          var entry = feeAmounts[feeIdStr]
+          if (!entry) return
+
+          var amount = parseFloat(entry.amount)
+          var formatted = entry.formatted ? String(entry.formatted) : null
+
+          var $checkbox = $wrapper.find('.gs-hb-fee-checkbox[data-fee-id="' + feeId + '"]').first()
+          if (!$checkbox.length) return
+
+          if (Number.isFinite(amount)) {
+            // keep data-price in sync for subtotal calc
+            $checkbox.data('price', amount)
+            $checkbox.attr('data-price', String(amount.toFixed(2)))
+          }
+
+          if (formatted) {
+            var $price = $checkbox.closest('.gs-hb-fee-option').find('.gs-hb-fee-price').first()
+            if ($price.length) $price.text('(' + formatted + ')')
+          }
+        })
+
+        updateOptionsTotalPrice($wrapper)
+
+        // Keep details-step summary in sync
+        $wrapper.data('gsHbLastRecalc', response.data)
+        updateDetailsSummary($wrapper, response.data)
+      },
+      error: function (xhr, status, error) {
+        debugLog('[GS HB] recalc-prices ajax error:', { status: status, error: error, xhr: xhr })
+        $feesForm.find('input, button').prop('disabled', false)
+      },
+    })
+  }
+
+  function showFeesStep($wrapper) {
+    if (!$wrapper || !$wrapper.length) return false
+
+    var $step1 = $wrapper.find('.hb-accom-step-wrapper').first()
+    var $step2 = $wrapper.find('.hb-intermediate-step-wrapper.gs-hb-fees-step').first()
+    var $step3 = $wrapper.find('.gs-hb-details-step').first()
+    if (!$step2.length) return false
+
+    // Original HBook JS may hide .hb-options-form / .hb-option; force-show our content.
+    $step2.find('.gs-hb-fees-form').show()
+    $step2.find('.gs-hb-fee-option').show()
+
+    if ($step3.length) $step3.hide()
+    $step1.slideUp(200, function () {
+      $step2.slideDown(200)
+    })
+
+    var selectedFeeIds = getSelectedFeeIds($wrapper)
+    setSelectedFeesHidden($wrapper, selectedFeeIds)
+    updateOptionsTotalPrice($wrapper)
+    recalcPricesWithFees($wrapper, selectedFeeIds)
+
+    return true
+  }
+
+  function showPriceStep($wrapper) {
+    if (!$wrapper || !$wrapper.length) return false
+
+    var $step1 = $wrapper.find('.hb-accom-step-wrapper').first()
+    var $step2 = $wrapper.find('.hb-intermediate-step-wrapper.gs-hb-fees-step').first()
+    var $step3 = $wrapper.find('.gs-hb-details-step').first()
+    if (!$step1.length) return false
+
+    if ($step3.length) $step3.hide()
+    if ($step2.length) {
+      $step2.slideUp(200, function () {
+        $step1.slideDown(200)
+      })
+    } else {
+      $step1.slideDown(200)
+    }
+
+    return true
+  }
+
+  function showDetailsStep($wrapper) {
+    if (!$wrapper || !$wrapper.length) return false
+
+    var $step1 = $wrapper.find('.hb-accom-step-wrapper').first()
+    var $step2 = $wrapper.find('.hb-intermediate-step-wrapper.gs-hb-fees-step').first()
+    var $step3 = $wrapper.find('.gs-hb-details-step').first()
+    if (!$step3.length) return false
+
+    if ($step1.length) $step1.hide()
+    if ($step2.length) $step2.hide()
+
+    $step3.slideDown(200)
+
+    var selectedFeeIds = getSelectedFeeIds($wrapper)
+    setSelectedFeesHidden($wrapper, selectedFeeIds)
+    updateDetailsSummary($wrapper)
+    return true
+  }
+
+  // Step 1 -> fees step
+  $(document).on(
+    'click',
+    '.hbook-wrapper[data-gs-hb-compat="1"] .hb-next-step-1 input',
+    function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation()
+
+      var $wrapper = $(this).closest('.hbook-wrapper[data-gs-hb-compat="1"]')
+      if (!showFeesStep($wrapper)) {
+        showDetailsStep($wrapper)
+      }
+      return false
+    },
+  )
+
+  // Fees step -> back to step 1
+  $(document).on(
+    'click',
+    '.hbook-wrapper[data-gs-hb-compat="1"] .hb-previous-step-1 input',
+    function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation()
+
+      var $wrapper = $(this).closest('.hbook-wrapper[data-gs-hb-compat="1"]')
+      showPriceStep($wrapper)
+      return false
+    },
+  )
+
+  // Recalculate when fee selection changes (debounced)
+  $(document).on(
+    'change',
+    '.hbook-wrapper[data-gs-hb-compat="1"] .gs-hb-fee-checkbox',
+    function () {
+      var $wrapper = $(this).closest('.hbook-wrapper[data-gs-hb-compat="1"]')
+      var selectedFeeIds = getSelectedFeeIds($wrapper)
+      setSelectedFeesHidden($wrapper, selectedFeeIds)
+      updateOptionsTotalPrice($wrapper)
+
+      var prevTimer = $wrapper.data('gsHbFeesRecalcTimer')
+      if (prevTimer) clearTimeout(prevTimer)
+      var timer = setTimeout(function () {
+        recalcPricesWithFees($wrapper, selectedFeeIds)
+      }, 250)
+      $wrapper.data('gsHbFeesRecalcTimer', timer)
+    },
+  )
+
+  // Let integrators hook the moment user confirms fees (step 2 "NEXT").
+  $(document).on(
+    'click',
+    '.hbook-wrapper[data-gs-hb-compat="1"] .hb-next-step-2 input',
+    function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation()
+
+      var $wrapper = $(this).closest('.hbook-wrapper[data-gs-hb-compat="1"]')
+      var selectedFeeIds = getSelectedFeeIds($wrapper)
+      setSelectedFeesHidden($wrapper, selectedFeeIds)
+
+      // Custom event for the next step implementation (booking details / reservation creation).
+      try {
+        $wrapper.trigger('gsHbFeesConfirmed', { feeIds: selectedFeeIds })
+      } catch (_) {
+        // ignore
+      }
+
+      showDetailsStep($wrapper)
+      return false
+    },
+  )
+
+  // Details step -> back
+  $(document).on(
+    'click',
+    '.hbook-wrapper[data-gs-hb-compat="1"] .hb-previous-step-2 input',
+    function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation()
+
+      var $wrapper = $(this).closest('.hbook-wrapper[data-gs-hb-compat="1"]')
+      if (!showFeesStep($wrapper)) {
+        showPriceStep($wrapper)
+      }
+
+      return false
+    },
+  )
+
+  // Book now (no-op)
+  $(document).on(
+    'click',
+    '.hbook-wrapper[data-gs-hb-compat="1"] .gs-hb-book-now',
+    function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation()
+      return false
+    },
+  )
+
   // "Change search" button: expand form again and clear results (matches original flow)
   $(document).on(
     'click',
@@ -201,6 +612,79 @@
       }
     })
   })
+
+  // Capture-phase click interceptor:
+  // Some themes/plugins include the original HBook booking-form.js which runs on `.hb-next-step-1`
+  // and hides `.hb-options-form` / `.hb-option`. We intercept early and show our fees step.
+  if (window.document && document.addEventListener) {
+    document.addEventListener(
+      'click',
+      function (event) {
+        try {
+          var target = event.target
+          if (!target || !target.closest) return
+
+          // We only care about clicks within our compat wrappers.
+          var wrapper = target.closest('.hbook-wrapper[data-gs-hb-compat="1"]')
+          if (!wrapper) return
+
+          // Only intercept when our fees step exists.
+          if (!wrapper.querySelector || !wrapper.querySelector('.hb-intermediate-step-wrapper.gs-hb-fees-step')) {
+            return
+          }
+
+          // Intercept step-1 NEXT clicks before HBook JS sees them.
+          if (target.matches && target.matches('.hb-next-step-1 input')) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation()
+
+            if (!showFeesStep($(wrapper))) {
+              showDetailsStep($(wrapper))
+            }
+          }
+
+          // Intercept step-2 NEXT clicks before HBook JS sees them.
+          if (target.matches && target.matches('.hb-next-step-2 input')) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation()
+
+            var $w = $(wrapper)
+            var selectedFeeIds = getSelectedFeeIds($w)
+            setSelectedFeesHidden($w, selectedFeeIds)
+            try {
+              $w.trigger('gsHbFeesConfirmed', { feeIds: selectedFeeIds })
+            } catch (_) {
+              // ignore
+            }
+            showDetailsStep($w)
+          }
+
+          // Intercept details PREVIOUS clicks before HBook JS sees them.
+          if (target.matches && target.matches('.hb-previous-step-2 input')) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation()
+
+            if (!showFeesStep($(wrapper))) {
+              showPriceStep($(wrapper))
+            }
+          }
+
+          // Intercept Book Now clicks (no-op)
+          if (target.matches && target.matches('.gs-hb-book-now')) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation()
+          }
+        } catch (e) {
+          debugLog('[GS HB] click capture error:', e)
+        }
+      },
+      true,
+    )
+  }
 
   // Capture-phase submit interceptor:
   // Some themes/plugins include the original HBook booking-form.js which stops bubbling,

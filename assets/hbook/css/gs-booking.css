@@ -16,3 +16,16 @@
   color: dimgray;
   padding: 10px 0;
 }
+
+.hbook-wrapper .gs-hb-fees-step .gs-hb-fee-price {
+  color: dimgray;
+}
+
+.hbook-wrapper .gs-hb-fees-step .hb-options-total-price {
+  margin-top: 10px;
+}
+
+.hbook-wrapper .gs-hb-fees-step .gs-hb-total-price {
+  margin-top: 10px;
+  font-weight: 600;
+}

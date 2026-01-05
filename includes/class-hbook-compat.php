@@ -62,6 +62,10 @@ class GoldenStay_HBook_Compat {
         // Public AJAX: calculate availability + price breakdown for booking form (replacement for HBook search results).
         add_action( 'wp_ajax_nopriv_goldenstay_hb_calc_prices', array( $this, 'ajax_hb_calc_prices' ) );
         add_action( 'wp_ajax_goldenstay_hb_calc_prices', array( $this, 'ajax_hb_calc_prices' ) );
+
+        // Public AJAX: recalc prices when user selects additional fees on the website.
+        add_action( 'wp_ajax_nopriv_goldenstay_hb_recalc_prices', array( $this, 'ajax_hb_recalc_prices' ) );
+        add_action( 'wp_ajax_goldenstay_hb_recalc_prices', array( $this, 'ajax_hb_recalc_prices' ) );
     }
 
     public function shortcode_not_implemented() {
@@ -370,6 +374,211 @@ class GoldenStay_HBook_Compat {
         );
     }
 
+    public function ajax_hb_recalc_prices() {
+        check_ajax_referer( 'goldenstay_frontend_nonce', 'nonce' );
+
+        $accom_id = isset( $_POST['accom_id'] ) ? intval( $_POST['accom_id'] ) : 0;
+        $check_in_raw = isset( $_POST['check_in'] ) ? sanitize_text_field( $_POST['check_in'] ) : '';
+        $check_out_raw = isset( $_POST['check_out'] ) ? sanitize_text_field( $_POST['check_out'] ) : '';
+        $adults = isset( $_POST['adults'] ) ? intval( $_POST['adults'] ) : 1;
+        $children = isset( $_POST['children'] ) ? intval( $_POST['children'] ) : 0;
+        $fee_ids_raw = isset( $_POST['fee_ids'] ) ? sanitize_text_field( $_POST['fee_ids'] ) : '';
+        $base_fee_ids_raw = isset( $_POST['base_fee_ids'] ) ? sanitize_text_field( $_POST['base_fee_ids'] ) : '';
+        $toggle_fee_ids_raw = isset( $_POST['toggle_fee_ids'] ) ? sanitize_text_field( $_POST['toggle_fee_ids'] ) : '';
+
+        if ( ! $accom_id ) {
+            wp_send_json_error( array( 'message' => 'Accommodation ID is required' ) );
+        }
+
+        $token = GoldenStay_Manager::get_api_token();
+        if ( ! $token ) {
+            wp_send_json_error( array( 'message' => 'GoldenStay API token is missing. Please login in WP admin.' ) );
+        }
+
+        $property_id = GoldenStay_Accommodation_Mapping::get_property_id_for_accom( $accom_id );
+        if ( ! $property_id ) {
+            wp_send_json_error( array( 'message' => 'Property mapping is missing for this accommodation' ) );
+        }
+
+        $date_from = $this->normalize_date_ymd( $check_in_raw );
+        $date_to = $this->normalize_date_ymd( $check_out_raw );
+        if ( ! $date_from || ! $date_to ) {
+            wp_send_json_error( array( 'message' => 'Please select check-in and check-out dates' ) );
+        }
+        if ( strtotime( $date_to ) <= strtotime( $date_from ) ) {
+            wp_send_json_error( array( 'message' => 'Check-out date must be after check-in date' ) );
+        }
+
+        $adults = max( 0, intval( $adults ) );
+        $children = max( 0, intval( $children ) );
+        $guests = max( 1, $adults + $children );
+
+        $parse_ids = function ( $raw ) {
+            $ids = array();
+            $raw = trim( (string) $raw );
+            if ( $raw === '' ) {
+                return $ids;
+            }
+            $parts = preg_split( '/[,\s]+/', $raw );
+            if ( is_array( $parts ) ) {
+                foreach ( $parts as $p ) {
+                    $id = intval( trim( (string) $p ) );
+                    if ( $id > 0 ) {
+                        $ids[] = $id;
+                    }
+                }
+            }
+            return array_values( array_unique( array_filter( $ids ) ) );
+        };
+
+        // Posted selected fee IDs (website optional selections)
+        $fee_ids = $parse_ids( $fee_ids_raw );
+        // Fee IDs that were included in the Step 1 total (base fees)
+        $base_fee_ids = $parse_ids( $base_fee_ids_raw );
+        // Fee IDs that are toggleable in the website fees UI (checkbox list)
+        $toggle_fee_ids = $parse_ids( $toggle_fee_ids_raw );
+
+        $fees_by_id = $this->get_property_additional_fees_by_id( $property_id );
+
+        $fee_keys = array_map( 'intval', array_keys( $fees_by_id ) );
+        $fee_key_map = array_fill_keys( $fee_keys, true );
+
+        $filter_existing = function ( $ids ) use ( $fee_key_map ) {
+            $out = array();
+            foreach ( $ids as $id ) {
+                $id = intval( $id );
+                if ( $id > 0 && isset( $fee_key_map[ $id ] ) ) {
+                    $out[] = $id;
+                }
+            }
+            return array_values( array_unique( $out ) );
+        };
+
+        $fee_ids = $filter_existing( $fee_ids );
+        $base_fee_ids = $filter_existing( $base_fee_ids );
+        $toggle_fee_ids = $filter_existing( $toggle_fee_ids );
+
+        $selected_optional_fee_ids = array();
+        $all_fee_ids = array();
+
+        // Preferred mode: base fees are provided by frontend (keeps totals stable).
+        if ( count( $base_fee_ids ) ) {
+            $toggle_map = array_fill_keys( $toggle_fee_ids, true );
+            $fixed_fee_ids = array();
+            foreach ( $base_fee_ids as $id ) {
+                if ( isset( $toggle_map[ $id ] ) ) {
+                    continue;
+                }
+                $fixed_fee_ids[] = $id;
+            }
+
+            $toggle_allowed_map = array_fill_keys( $toggle_fee_ids, true );
+            foreach ( $fee_ids as $id ) {
+                if ( isset( $toggle_allowed_map[ $id ] ) ) {
+                    $selected_optional_fee_ids[] = $id;
+                }
+            }
+
+            $all_fee_ids = array_values(
+                array_unique(
+                    array_filter(
+                        array_merge( $fixed_fee_ids, $selected_optional_fee_ids )
+                    )
+                )
+            );
+        } else {
+            // Fallback: keep mandatory fees always included.
+            $mandatory_fee_ids = array();
+            foreach ( $fees_by_id as $fid => $fee ) {
+                if ( ! is_array( $fee ) ) {
+                    continue;
+                }
+                $is_optional = ! empty( $fee['optional'] );
+                if ( ! $is_optional ) {
+                    $mandatory_fee_ids[] = intval( $fid );
+                }
+            }
+
+            foreach ( $fee_ids as $fid ) {
+                if ( ! isset( $fees_by_id[ $fid ] ) || ! is_array( $fees_by_id[ $fid ] ) ) {
+                    continue;
+                }
+                if ( empty( $fees_by_id[ $fid ]['optional'] ) ) {
+                    continue;
+                }
+                $selected_optional_fee_ids[] = intval( $fid );
+            }
+
+            $all_fee_ids = array_values(
+                array_unique(
+                    array_filter(
+                        array_merge( $mandatory_fee_ids, $selected_optional_fee_ids )
+                    )
+                )
+            );
+        }
+
+        $response = $this->api_post_json(
+            'reservation/calc-prices',
+            array(
+                'fees' => $all_fee_ids,
+                'property_id' => intval( $property_id ),
+                'date_from' => $date_from,
+                'date_to' => $date_to,
+                'number_of_guests' => intval( $guests ),
+                'number_of_adults' => intval( $adults ),
+                'number_of_children' => intval( $children ),
+                'units' => 1,
+                'rent' => null,
+                'auto_recalculation' => true,
+            ),
+            true
+        );
+
+        if ( is_wp_error( $response ) ) {
+            wp_send_json_error( array( 'message' => 'API connection error: ' . $response->get_error_message() ) );
+        }
+
+        $status_code = wp_remote_retrieve_response_code( $response );
+        $calc_prices = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( $status_code !== 200 || ! is_array( $calc_prices ) ) {
+            wp_send_json_error( array( 'message' => 'Failed to calculate price' ) );
+        }
+
+        $variant = $this->pick_calc_prices_variant( $calc_prices, $guests );
+        if ( ! is_array( $variant ) ) {
+            wp_send_json_error( array( 'message' => 'Failed to calculate price' ) );
+        }
+
+        $total = isset( $variant['total'] ) ? floatval( $variant['total'] ) : 0;
+
+        $fee_amounts = array();
+        $services = isset( $variant['services'] ) && is_array( $variant['services'] ) ? $variant['services'] : array();
+        foreach ( $services as $service ) {
+            if ( ! is_array( $service ) ) {
+                continue;
+            }
+            $fee_id = isset( $service['property_additional_fee_id'] ) ? intval( $service['property_additional_fee_id'] ) : 0;
+            if ( ! $fee_id ) {
+                continue;
+            }
+            $amount = isset( $service['amount'] ) ? floatval( $service['amount'] ) : 0;
+            $fee_amounts[ $fee_id ] = array(
+                'amount' => $amount,
+                'formatted' => $this->format_price( $amount ),
+            );
+        }
+
+        wp_send_json_success(
+            array(
+                'total' => $total,
+                'total_formatted' => $this->format_price( $total ),
+                'fee_amounts' => $fee_amounts,
+                'selected_optional_fee_ids' => array_values( array_unique( $selected_optional_fee_ids ) ),
+            )
+        );
+    }
+
     private function normalize_date_ymd( $value ) {
         $value = trim( (string) $value );
         if ( ! $value ) {
@@ -407,6 +616,66 @@ class GoldenStay_HBook_Compat {
     private function format_price( $amount ) {
         $num = is_numeric( $amount ) ? floatval( $amount ) : 0;
         return '€' . number_format_i18n( $num, 2 );
+    }
+
+    private function calculate_fee_amount_preview( $fee, $client_total, $nights, $adults, $children ) {
+        if ( ! is_array( $fee ) ) {
+            return 0;
+        }
+        $value = isset( $fee['value'] ) ? floatval( $fee['value'] ) : 0;
+        $discriminator = isset( $fee['discriminator_id'] ) ? intval( $fee['discriminator_id'] ) : 0;
+        $nights = max( 1, intval( $nights ) );
+        $adults = max( 0, intval( $adults ) );
+        $children = max( 0, intval( $children ) );
+        $guests = max( 1, $adults + $children );
+        $client_total = is_numeric( $client_total ) ? floatval( $client_total ) : 0;
+
+        switch ( $discriminator ) {
+            case 1: // FlatPerStay
+                return $value;
+            case 2: // FixedPerDay
+                return $value * $nights;
+            case 3: // IndependentPercentage (based on current client_total)
+                return $value * $client_total;
+            case 5: // FixedAmountPerPerson
+                return $value * $guests;
+            case 6: // FixedAmountPerPersonPerDay
+                return $value * $guests * $nights;
+            case 7: // FixedAmountPerPersonPerWeek
+                $weeks = (int) ceil( $nights / 7 );
+                return $value * $guests * max( 1, $weeks );
+            case 8: // FixedAmountPerWeek
+                $weeks2 = (int) ceil( $nights / 7 );
+                return $value * max( 1, $weeks2 );
+            default:
+                return $value;
+        }
+    }
+
+    private function get_fee_display_name_nl( $fee ) {
+        if ( ! is_array( $fee ) ) {
+            return '';
+        }
+
+        $name = '';
+        if ( isset( $fee['translations'] ) && is_array( $fee['translations'] ) ) {
+            foreach ( $fee['translations'] as $tr ) {
+                if ( ! is_array( $tr ) ) {
+                    continue;
+                }
+                // 11 = nl
+                if ( isset( $tr['language_id'] ) && intval( $tr['language_id'] ) === 11 && ! empty( $tr['name'] ) ) {
+                    $name = (string) $tr['name'];
+                    break;
+                }
+            }
+        }
+
+        if ( $name === '' ) {
+            $name = isset( $fee['name'] ) ? (string) $fee['name'] : '';
+        }
+
+        return trim( (string) $name );
     }
 
     private function get_property_additional_fees_by_id( $property_id ) {
@@ -616,6 +885,387 @@ class GoldenStay_HBook_Compat {
         return $out;
     }
 
+    private function build_hb_fees_step_markup( $accom_id, $date_from, $date_to, $nights, $adults, $children, $variant, $fees_by_id, $default_fee_ids ) {
+        if ( ! is_array( $fees_by_id ) || ! count( $fees_by_id ) ) {
+            return '';
+        }
+
+        $accom_name = get_the_title( $accom_id );
+        if ( ! $accom_name ) {
+            $accom_name = 'Accommodation';
+        }
+
+        $rent = isset( $variant['rent'] ) ? floatval( $variant['rent'] ) : 0;
+
+        // Website optional fees (checkboxes)
+        $options = array();
+        foreach ( $fees_by_id as $fee_id => $fee ) {
+            if ( ! is_array( $fee ) ) {
+                continue;
+            }
+            $fee_id = intval( $fee_id );
+            if ( ! $fee_id ) {
+                continue;
+            }
+
+            $is_optional = ! empty( $fee['optional'] );
+            if ( ! $is_optional ) {
+                continue;
+            }
+
+            // website_optional is nullable in DB: treat NULL as "not configured" (visible).
+            $website_optional_raw = array_key_exists( 'website_optional', $fee ) ? $fee['website_optional'] : null;
+            $is_website_optional = ( $website_optional_raw === null ) ? true : ! empty( $website_optional_raw );
+            if ( ! $is_website_optional ) {
+                continue;
+            }
+
+            $options[] = array(
+                'id' => $fee_id,
+                'fee' => $fee,
+            );
+        }
+
+        if ( ! count( $options ) ) {
+            return '';
+        }
+
+        usort(
+            $options,
+            function ( $a, $b ) {
+                $a_order = isset( $a['fee']['order'] ) ? intval( $a['fee']['order'] ) : 999999;
+                $b_order = isset( $b['fee']['order'] ) ? intval( $b['fee']['order'] ) : 999999;
+                if ( $a_order === $b_order ) {
+                    return intval( $a['id'] ) - intval( $b['id'] );
+                }
+                return $a_order - $b_order;
+            }
+        );
+
+        // Amounts for fees already included in calc-prices response.
+        $amounts_by_fee = array();
+        if ( is_array( $variant ) && isset( $variant['services'] ) && is_array( $variant['services'] ) ) {
+            foreach ( $variant['services'] as $service ) {
+                if ( ! is_array( $service ) ) {
+                    continue;
+                }
+                $fid = isset( $service['property_additional_fee_id'] ) ? intval( $service['property_additional_fee_id'] ) : 0;
+                if ( ! $fid ) {
+                    continue;
+                }
+                $amounts_by_fee[ $fid ] = isset( $service['amount'] ) ? floatval( $service['amount'] ) : 0;
+            }
+        }
+
+        $base_total = isset( $variant['total'] ) ? floatval( $variant['total'] ) : 0;
+
+        $base_fee_ids = is_array( $default_fee_ids ) ? $default_fee_ids : array();
+        $base_fee_ids = array_values( array_unique( array_filter( array_map( 'intval', $base_fee_ids ) ) ) );
+
+        $toggle_fee_ids = array();
+        foreach ( $options as $opt ) {
+            $toggle_fee_ids[] = intval( $opt['id'] );
+        }
+        $toggle_fee_ids = array_values( array_unique( array_filter( $toggle_fee_ids ) ) );
+
+        // Provide fee meta (name + order) for summary rendering in JS.
+        $fee_meta = array();
+        foreach ( $fees_by_id as $fid => $fee ) {
+            if ( ! is_array( $fee ) ) {
+                continue;
+            }
+            $fid = intval( $fid );
+            if ( ! $fid ) {
+                continue;
+            }
+            $name = $this->get_fee_display_name_nl( $fee );
+            if ( $name === '' ) {
+                $name = 'Fee';
+            }
+            $order = isset( $fee['order'] ) ? intval( $fee['order'] ) : 999999;
+            $fee_meta[ $fid ] = array(
+                'name' => $name,
+                'order' => $order,
+            );
+        }
+        $fee_meta_json = wp_json_encode( $fee_meta );
+        if ( false === $fee_meta_json ) {
+            $fee_meta_json = '{}';
+        }
+
+        $initial_selected = array();
+        foreach ( $options as $opt ) {
+            if ( in_array( intval( $opt['id'] ), $default_fee_ids, true ) ) {
+                $initial_selected[] = intval( $opt['id'] );
+            } else if ( ! empty( $opt['fee']['enable_by_default'] ) ) {
+                // Fallback if defaults were not passed explicitly
+                $initial_selected[] = intval( $opt['id'] );
+            }
+        }
+        $initial_selected = array_values( array_unique( array_filter( $initial_selected ) ) );
+
+        $out = '';
+        $out .= '<div class="hb-intermediate-step-wrapper hb-step-wrapper gs-hb-fees-step" style="display:none;">';
+
+        // Back button
+        $out .= '<p class="hb-step-button hb-button-wrapper hb-previous-step hb-previous-step-1">';
+        $out .= '<input type="submit" value="← TERUG" />';
+        $out .= '</p>';
+
+        // Options form
+        $out .= '<form class="hb-options-form gs-hb-fees-form" ' .
+            'data-accom-id="' . esc_attr( intval( $accom_id ) ) . '" ' .
+            'data-accom-name="' . esc_attr( $accom_name ) . '" ' .
+            'data-check-in="' . esc_attr( $date_from ) . '" ' .
+            'data-check-out="' . esc_attr( $date_to ) . '" ' .
+            'data-adults="' . esc_attr( intval( $adults ) ) . '" ' .
+            'data-children="' . esc_attr( intval( $children ) ) . '" ' .
+            'data-rent="' . esc_attr( $rent ) . '" ' .
+            'data-base-total="' . esc_attr( $base_total ) . '" ' .
+            'data-current-total="' . esc_attr( $base_total ) . '" ' .
+            'data-base-fee-ids="' . esc_attr( implode( ',', $base_fee_ids ) ) . '" ' .
+            'data-toggle-fee-ids="' . esc_attr( implode( ',', $toggle_fee_ids ) ) . '" ' .
+            'data-fee-meta="' . esc_attr( $fee_meta_json ) . '"' .
+        '>';
+
+        $out .= '<h3 class="hb-title hb-title-extra">' . esc_html( "Extra's" ) . '</h3>';
+
+        $out .= '<div class="hb-options-multi-accoms hb-options-multi-accom-1">';
+        foreach ( $options as $opt ) {
+            $fee_id = intval( $opt['id'] );
+            $fee = $opt['fee'];
+            $name = $this->get_fee_display_name_nl( $fee );
+            if ( $name === '' ) {
+                $name = 'Fee';
+            }
+
+            $is_checked = in_array( $fee_id, $initial_selected, true );
+            $amount = isset( $amounts_by_fee[ $fee_id ] )
+                ? floatval( $amounts_by_fee[ $fee_id ] )
+                : $this->calculate_fee_amount_preview( $fee, $base_total, $nights, $adults, $children );
+
+            $amount = is_numeric( $amount ) ? floatval( $amount ) : 0;
+            $amount_formatted = $this->format_price( $amount );
+            $amount_data = number_format( $amount, 2, '.', '' );
+
+            $input_id = 'gs-hb-fee-' . intval( $fee_id ) . '-' . intval( $accom_id );
+
+            $out .= '<div class="hb-single-option hb-option gs-hb-fee-option">';
+            $out .= '<span class="hb-checkbox-wrapper">';
+            $out .= '<input type="checkbox" class="gs-hb-fee-checkbox" ' .
+                'data-fee-id="' . esc_attr( $fee_id ) . '" ' .
+                'data-price="' . esc_attr( $amount_data ) . '" ' .
+                'id="' . esc_attr( $input_id ) . '" ' .
+                'name="' . esc_attr( 'gs-hb-fee-' . $fee_id ) . '" ' .
+                ( $is_checked ? 'checked ' : '' ) .
+            '/>';
+            $out .= '<label for="' . esc_attr( $input_id ) . '">';
+            $out .= '<span class="gs-hb-fee-name">' . esc_html( $name ) . '</span> ';
+            $out .= '<span class="gs-hb-fee-price">(' . esc_html( $amount_formatted ) . ')</span>';
+            $out .= '</label>';
+            $out .= '</span>';
+            $out .= '</div>';
+        }
+        $out .= '</div>';
+
+        // Options subtotal (HBook-compatible placeholders)
+        $out .= '<p class="hb-options-total-price" style="display:none;">';
+        $out .= esc_html( "Totaal extra's:" ) . ' ';
+        $out .= '<span class="hb-price-placeholder-minus">-</span>';
+        $out .= '€<span class="hb-price-placeholder"></span>';
+        $out .= '</p>';
+
+        // Total price with selected fees
+        $out .= '<p class="gs-hb-total-price">';
+        $out .= esc_html( 'Totaal prijs:' ) . ' ';
+        $out .= '<span class="gs-hb-total-price-value">' . esc_html( $this->format_price( $base_total ) ) . '</span>';
+        $out .= '</p>';
+
+        // Hidden value with selected optional fees (CSV)
+        $out .= '<input type="hidden" class="gs-hb-selected-fees" name="gs_selected_fees" value="' . esc_attr( implode( ',', $initial_selected ) ) . '" />';
+        $out .= '<input name="hb-has-options-form" type="hidden" value="yes" />';
+        $out .= '</form>';
+
+        // Next button (step 2)
+        $out .= '<p class="hb-step-button hb-button-wrapper hb-next-step hb-next-step-2">';
+        $out .= '<input type="submit" value="NEXT →" />';
+        $out .= '</p>';
+
+        $out .= '</div>';
+
+        return $out;
+    }
+
+    private function build_hb_details_step_markup( $accom_id, $accom_name, $date_from, $date_to, $nights, $adults, $children, $variant, $fees_by_id, $base_fee_ids ) {
+        $accom_id = intval( $accom_id );
+        if ( ! $accom_id ) {
+            return '';
+        }
+
+        $accom_name = trim( (string) $accom_name );
+        if ( $accom_name === '' ) {
+            $accom_name = 'Accommodation';
+        }
+
+        $rent = isset( $variant['rent'] ) ? floatval( $variant['rent'] ) : 0;
+        $base_total = isset( $variant['total'] ) ? floatval( $variant['total'] ) : 0;
+
+        $base_fee_ids = is_array( $base_fee_ids ) ? $base_fee_ids : array();
+        $base_fee_ids = array_values( array_unique( array_filter( array_map( 'intval', $base_fee_ids ) ) ) );
+
+        // Determine which fees are toggleable on the website (same filter as fees-step)
+        $toggle_fee_ids = array();
+        if ( is_array( $fees_by_id ) ) {
+            foreach ( $fees_by_id as $fid => $fee ) {
+                if ( ! is_array( $fee ) ) {
+                    continue;
+                }
+                $fid = intval( $fid );
+                if ( ! $fid ) {
+                    continue;
+                }
+                $is_optional = ! empty( $fee['optional'] );
+                if ( ! $is_optional ) {
+                    continue;
+                }
+                $website_optional_raw = array_key_exists( 'website_optional', $fee ) ? $fee['website_optional'] : null;
+                $is_website_optional = ( $website_optional_raw === null ) ? true : ! empty( $website_optional_raw );
+                if ( ! $is_website_optional ) {
+                    continue;
+                }
+                $toggle_fee_ids[] = $fid;
+            }
+        }
+        $toggle_fee_ids = array_values( array_unique( array_filter( $toggle_fee_ids ) ) );
+
+        $fee_meta = array();
+        if ( is_array( $fees_by_id ) ) {
+            foreach ( $fees_by_id as $fid => $fee ) {
+                if ( ! is_array( $fee ) ) {
+                    continue;
+                }
+                $fid = intval( $fid );
+                if ( ! $fid ) {
+                    continue;
+                }
+                $name = $this->get_fee_display_name_nl( $fee );
+                if ( $name === '' ) {
+                    $name = 'Fee';
+                }
+                $order = isset( $fee['order'] ) ? intval( $fee['order'] ) : 999999;
+                $fee_meta[ $fid ] = array(
+                    'name' => $name,
+                    'order' => $order,
+                );
+            }
+        }
+        $fee_meta_json = wp_json_encode( $fee_meta );
+        if ( false === $fee_meta_json ) {
+            $fee_meta_json = '{}';
+        }
+
+        $out = '';
+        $out .= '<form class="hb-booking-details-form hb-step-wrapper gs-hb-details-step" style="display:none;" novalidate>';
+
+        // Back button to fees-step (or price-step if no fees)
+        $out .= '<p class="hb-step-button hb-button-wrapper hb-previous-step hb-previous-step-2">';
+        $out .= '<input type="submit" value="← PREVIOUS" />';
+        $out .= '</p>';
+
+        // Customer details (minimal clone of original HBook layout)
+        $out .= '<div id="hb-resa-customer-details-wrap">';
+        $out .= '<h3 class="hb-title">' . esc_html( 'Vul uw gegevens in' ) . '</h3>';
+        $out .= '<div class="hb-details-fields">';
+        $suffix = '-' . intval( $accom_id );
+        $out .= '<p><label for="gs-hb-first-name' . esc_attr( $suffix ) . '">' . esc_html( 'Voornaam' ) . '*</label>';
+        $out .= '<input id="gs-hb-first-name' . esc_attr( $suffix ) . '" name="hb_first_name" class="hb-detail-field" data-validation="required" type="text" /></p>';
+        $out .= '<p><label for="gs-hb-last-name' . esc_attr( $suffix ) . '">' . esc_html( 'Naam' ) . '*</label>';
+        $out .= '<input id="gs-hb-last-name' . esc_attr( $suffix ) . '" name="hb_last_name" class="hb-detail-field" data-validation="required" type="text" /></p>';
+        $out .= '<p><label for="gs-hb-email' . esc_attr( $suffix ) . '">' . esc_html( 'e-mail' ) . '*</label>';
+        $out .= '<input id="gs-hb-email' . esc_attr( $suffix ) . '" name="hb_email" class="hb-detail-field" data-validation="required email" type="email" /></p>';
+        $out .= '<p><label for="gs-hb-phone' . esc_attr( $suffix ) . '">' . esc_html( 'Telefoon' ) . '</label>';
+        $out .= '<input id="gs-hb-phone' . esc_attr( $suffix ) . '" name="hb_phone" class="hb-detail-field" data-validation="" type="text" /></p>';
+        $out .= '<p><label for="gs-hb-address' . esc_attr( $suffix ) . '">' . esc_html( 'Adres' ) . '</label>';
+        $out .= '<input id="gs-hb-address' . esc_attr( $suffix ) . '" name="hb_address_1" class="hb-detail-field" data-validation="" type="text" /></p>';
+        $out .= '<p><label for="gs-hb-address-2' . esc_attr( $suffix ) . '">' . esc_html( 'Extra adresregel' ) . '</label>';
+        $out .= '<input id="gs-hb-address-2' . esc_attr( $suffix ) . '" name="hb_address_2" class="hb-detail-field" data-validation="" type="text" /></p>';
+        $out .= '<p><label for="gs-hb-city' . esc_attr( $suffix ) . '">' . esc_html( 'Plaats' ) . '</label>';
+        $out .= '<input id="gs-hb-city' . esc_attr( $suffix ) . '" name="hb_city" class="hb-detail-field" data-validation="" type="text" /></p>';
+        $out .= '<p><label for="gs-hb-state' . esc_attr( $suffix ) . '">' . esc_html( 'Provincie' ) . '</label>';
+        $out .= '<input id="gs-hb-state' . esc_attr( $suffix ) . '" name="hb_state_province" class="hb-detail-field" data-validation="" type="text" /></p>';
+        $out .= '<p><label for="gs-hb-country' . esc_attr( $suffix ) . '">' . esc_html( 'Land' ) . '*</label>';
+        $out .= '<select id="gs-hb-country' . esc_attr( $suffix ) . '" name="hb_country_iso" class="hb-detail-field hb-country-iso-select" data-validation="required">';
+        $out .= '<option value="">' . esc_html( '' ) . '</option>';
+        $out .= '<option value="NL">Netherlands</option>';
+        $out .= '<option value="BE">Belgium</option>';
+        $out .= '<option value="DE">Germany</option>';
+        $out .= '<option value="FR">France</option>';
+        $out .= '<option value="GB">United Kingdom</option>';
+        $out .= '</select></p>';
+        $out .= '<p><label for="gs-hb-zip' . esc_attr( $suffix ) . '">' . esc_html( 'Postcode' ) . '</label>';
+        $out .= '<input id="gs-hb-zip' . esc_attr( $suffix ) . '" name="hb_zip_code" class="hb-detail-field" data-validation="" type="text" /></p>';
+        $out .= '</div>';
+        $out .= '</div><!-- end #hb-resa-customer-details-wrap -->';
+
+        // Summary (filled/updated by gs-booking.js)
+        $out .= '<h3 class="hb-title hb-title-summary">' . esc_html( 'Samenvatting van uw reservatie' ) . '</h3>';
+        $out .= '<div class="hb-summary-wrapper gs-hb-summary-wrapper" ' .
+            'data-accom-id="' . esc_attr( $accom_id ) . '" ' .
+            'data-accom-name="' . esc_attr( $accom_name ) . '" ' .
+            'data-check-in="' . esc_attr( $date_from ) . '" ' .
+            'data-check-out="' . esc_attr( $date_to ) . '" ' .
+            'data-nights="' . esc_attr( intval( $nights ) ) . '" ' .
+            'data-adults="' . esc_attr( intval( $adults ) ) . '" ' .
+            'data-children="' . esc_attr( intval( $children ) ) . '" ' .
+            'data-rent="' . esc_attr( $rent ) . '" ' .
+            'data-base-total="' . esc_attr( $base_total ) . '" ' .
+            'data-current-total="' . esc_attr( $base_total ) . '" ' .
+            'data-base-fee-ids="' . esc_attr( implode( ',', $base_fee_ids ) ) . '" ' .
+            'data-toggle-fee-ids="' . esc_attr( implode( ',', $toggle_fee_ids ) ) . '" ' .
+            'data-fee-meta="' . esc_attr( $fee_meta_json ) . '"' .
+        '>';
+        $out .= '<div class="gs-hb-summary-lines">';
+        $out .= '<div class="gs-hb-summary-line">Chosen check-in date <span class="gs-hb-summary-check-in">' . esc_html( $date_from ) . '</span></div>';
+        $out .= '<div class="gs-hb-summary-line">Chosen check-out date <span class="gs-hb-summary-check-out">' . esc_html( $date_to ) . '</span></div>';
+        $out .= '<div class="gs-hb-summary-line">Number of nights <span class="gs-hb-summary-nights">' . esc_html( intval( $nights ) ) . '</span></div>';
+        $out .= '<div class="gs-hb-summary-line">Volwassenen: <span class="gs-hb-summary-adults">' . esc_html( intval( $adults ) ) . '</span></div>';
+        $out .= '<br/>';
+        $out .= '<div class="gs-hb-summary-line">Villa: <span class="gs-hb-summary-accom">' . esc_html( $accom_name ) . '</span></div>';
+        $out .= '<div class="gs-hb-summary-line">Prijs villa: <span class="gs-hb-summary-rent">' . esc_html( $this->format_price( $rent ) ) . '</span></div>';
+        $out .= '<div class="gs-hb-summary-fees"></div>';
+        $out .= '<div class="gs-hb-summary-line gs-hb-summary-total"><strong>Totaal:</strong> <span class="gs-hb-summary-total-value">' . esc_html( $this->format_price( $base_total ) ) . '</span></div>';
+        $out .= '</div>';
+        $out .= '</div><!-- end .hb-summary-wrapper -->';
+
+        // Policies (static copy of original wording seen in theme)
+        $out .= '<div class="hb-policies-area">';
+        $out .= '<h3 class="hb-title hb-title-terms">' . esc_html( 'Annuleringsvoorwaarden' ) . '</h3>';
+        $out .= '<p><input type="checkbox" id="gs-hb-terms' . esc_attr( $suffix ) . '" name="hb_terms_and_cond" />';
+        $out .= '<label for="gs-hb-terms' . esc_attr( $suffix ) . '" class="hb-terms-and-cond"> ' . esc_html( 'Ik heb de annuleringsvoorwaarden gelezen en accepteer deze voorwaarden voor deze boeking.' ) . '</label></p>';
+        $out .= '<p><input type="checkbox" id="gs-hb-privacy' . esc_attr( $suffix ) . '" name="hb_privacy_policy" />';
+        $out .= '<label for="gs-hb-privacy' . esc_attr( $suffix ) . '" class="hb-privacy-policy"> ' . esc_html( 'Ik heb de privacy voorwaarden gelezen en accepteer deze voorwaarden.' ) . '</label></p>';
+        $out .= '<p class="hb-policies-error"></p>';
+        $out .= '</div>';
+
+        // Book now (no-op for now)
+        $out .= '<div class="hb-confirm-area gs-hb-confirm-area">';
+        $out .= '<p class="hb-confirm-error"></p>';
+        $out .= '<p class="hb-confirm-button hb-button-wrapper"><input type="submit" class="gs-hb-book-now" value="BOOK NOW" /></p>';
+        $out .= '</div>';
+
+        // Hidden fields (keep same classnames as HBook for easier future integration)
+        $out .= '<input type="hidden" class="hb-details-check-in" name="hb-details-check-in" value="' . esc_attr( $date_from ) . '" />';
+        $out .= '<input type="hidden" class="hb-details-check-out" name="hb-details-check-out" value="' . esc_attr( $date_to ) . '" />';
+        $out .= '<input type="hidden" class="hb-details-adults" name="hb-details-adults" value="' . esc_attr( intval( $adults ) ) . '" />';
+        $out .= '<input type="hidden" class="hb-details-children" name="hb-details-children" value="' . esc_attr( intval( $children ) ) . '" />';
+        $out .= '<input type="hidden" class="hb-details-accom-ids" name="hb-details-accom-ids" value="' . esc_attr( intval( $accom_id ) ) . '" />';
+        $out .= '<input type="hidden" class="gs-hb-selected-fees" name="gs_selected_fees" value="" />';
+
+        $out .= '</form>';
+
+        return $out;
+    }
+
     private function build_hb_calc_prices_result( $accom_id, $check_in_raw, $check_out_raw, $adults, $children ) {
         $accom_id = intval( $accom_id );
         if ( ! $accom_id ) {
@@ -734,6 +1384,33 @@ class GoldenStay_HBook_Compat {
                     '<input type="submit" value="NEXT →" />' .
                 '</p>' .
             '</div>';
+
+        // Optional website fees step (shown after clicking NEXT)
+        $mark_up .= $this->build_hb_fees_step_markup(
+            $accom_id,
+            $date_from,
+            $date_to,
+            $nights,
+            $adults,
+            $children,
+            $variant,
+            $fees_by_id,
+            $fee_ids
+        );
+
+        // Booking details step (shown after fees NEXT, or directly if no fees step)
+        $mark_up .= $this->build_hb_details_step_markup(
+            $accom_id,
+            $accom_name,
+            $date_from,
+            $date_to,
+            $nights,
+            $adults,
+            $children,
+            $variant,
+            $fees_by_id,
+            $fee_ids
+        );
 
         return array(
             'success' => true,
