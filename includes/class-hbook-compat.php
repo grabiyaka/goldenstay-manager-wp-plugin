@@ -88,9 +88,16 @@ class GoldenStay_HBook_Compat {
         }
 
         // Styles
+        // Prefer original HBook CSS if the plugin is installed (even if deactivated),
+        // to match Adomus theme styling as closely as possible.
+        $hbook_css_path = WP_PLUGIN_DIR . '/hbook/front-end/css/hbook.css';
+        $front_css_url = GOLDENSTAY_PLUGIN_URL . 'assets/hbook/css/hb-front-end-style.min.css';
+        if ( file_exists( $hbook_css_path ) ) {
+            $front_css_url = plugins_url( 'hbook/front-end/css/hbook.css' );
+        }
         wp_enqueue_style(
             'gs-hb-front-end',
-            GOLDENSTAY_PLUGIN_URL . 'assets/hbook/css/hb-front-end-style.min.css',
+            $front_css_url,
             array(),
             GOLDENSTAY_VERSION
         );
@@ -524,7 +531,11 @@ class GoldenStay_HBook_Compat {
         return null;
     }
 
-    private function build_hb_price_breakdown_markup( $variant, $date_from, $date_to, $nights, $guests, $fees_by_id = array() ) {
+    private function build_hb_price_breakdown_markup( $variant, $date_from, $date_to, $nights, $adults, $children, $fees_by_id = array() ) {
+        $adults = max( 0, intval( $adults ) );
+        $children = max( 0, intval( $children ) );
+        $guests = max( 1, $adults + $children );
+
         $rent = isset( $variant['rent'] ) ? floatval( $variant['rent'] ) : 0;
         $day_rate = isset( $variant['day_rate'] ) ? floatval( $variant['day_rate'] ) : 0;
         $service_amount = isset( $variant['service_amount'] ) ? floatval( $variant['service_amount'] ) : 0;
@@ -572,9 +583,20 @@ class GoldenStay_HBook_Compat {
                     if ( $discriminator === 2 ) { // FixedPerDay
                         $detail = '(' . intval( $nights ) . ' nachten x ' . $this->format_price( $value ) . ')';
                     } else if ( $discriminator === 5 ) { // FixedAmountPerPerson
-                        $detail = '(' . intval( $guests ) . ' personen x ' . $this->format_price( $value ) . ')';
+                        // Prefer adult-based wording when no children are selected (matches original UI).
+                        if ( $children <= 0 && $adults > 0 ) {
+                            $label = $adults === 1 ? 'volwassene' : 'volwassenen';
+                            $detail = '(' . intval( $adults ) . ' ' . $label . ' x ' . $this->format_price( $value ) . ')';
+                        } else {
+                            $detail = '(' . intval( $guests ) . ' personen x ' . $this->format_price( $value ) . ')';
+                        }
                     } else if ( $discriminator === 6 ) { // FixedAmountPerPersonPerDay
-                        $detail = '(' . intval( $guests ) . ' personen x ' . intval( $nights ) . ' nachten x ' . $this->format_price( $value ) . ')';
+                        if ( $children <= 0 && $adults > 0 ) {
+                            $label = $adults === 1 ? 'volwassene' : 'volwassenen';
+                            $detail = '(' . intval( $adults ) . ' ' . $label . ' x ' . intval( $nights ) . ' nachten x ' . $this->format_price( $value ) . ')';
+                        } else {
+                            $detail = '(' . intval( $guests ) . ' personen x ' . intval( $nights ) . ' nachten x ' . $this->format_price( $value ) . ')';
+                        }
                     } else if ( $discriminator === 3 ) { // IndependentPercentage
                         $detail = '(' . esc_html( rtrim( rtrim( number_format_i18n( $value * 100, 2 ), '0' ), ',' ) ) . '%)';
                     }
@@ -684,10 +706,10 @@ class GoldenStay_HBook_Compat {
         $total = isset( $variant['total'] ) ? floatval( $variant['total'] ) : 0;
         $caption = 'Prijs voor ' . intval( $nights ) . ' nachten';
         $show_text = 'Toon de prijs in detail';
-        $hide_text = 'Verberg prijs details';
+        $hide_text = 'Verberg prijs detail';
 
         $msg_available = esc_html( $accom_name ) . ' is beschikbaar op de door jou gekozen data';
-        $price_breakdown = $this->build_hb_price_breakdown_markup( $variant, $date_from, $date_to, $nights, $guests, $fees_by_id );
+        $price_breakdown = $this->build_hb_price_breakdown_markup( $variant, $date_from, $date_to, $nights, $adults, $children, $fees_by_id );
 
         $mark_up = '' .
             '<div class="hb-accom-step-wrapper hb-step-wrapper">' .
@@ -708,6 +730,9 @@ class GoldenStay_HBook_Compat {
                         '<p class="hb-price-breakdown">' . $price_breakdown . '</p>' .
                     '</div>' .
                 '</div>' .
+                '<p class="hb-step-button hb-button-wrapper hb-next-step hb-next-step-1">' .
+                    '<input type="submit" value="NEXT →" />' .
+                '</p>' .
             '</div>';
 
         return array(
@@ -1324,6 +1349,19 @@ class GoldenStay_HBook_Compat {
 
         $this->enqueue_hbook_assets();
 
+        // Match original HBook behavior:
+        // - on hb_accommodation pages, the booking form is scoped to that accommodation
+        // - otherwise it defaults to "all"
+        $page_accom_id = 0;
+        if ( ! empty( $atts['accom_id'] ) && $atts['accom_id'] !== 'all' ) {
+            $page_accom_id = intval( $atts['accom_id'] );
+        } else {
+            $current_post_id = get_the_ID();
+            if ( $current_post_id && get_post_type( $current_post_id ) === 'hb_accommodation' ) {
+                $page_accom_id = intval( $current_post_id );
+            }
+        }
+
         // Minimal wrapper required by hb-datepick.js
         $wrapper_rules = array(
             'allowed_check_in_days' => 'all',
@@ -1357,7 +1395,17 @@ class GoldenStay_HBook_Compat {
         $adults = isset( $_POST['hb-adults'] ) ? sanitize_text_field( $_POST['hb-adults'] ) : '';
         $children = isset( $_POST['hb-children'] ) ? sanitize_text_field( $_POST['hb-children'] ) : '';
 
+        // NOTE: HBook shows a title on accommodation pages.
         $form_title = '';
+        if ( $page_accom_id ) {
+            $accom_title = get_the_title( $page_accom_id );
+            if ( ! $accom_title ) {
+                $accom_title = 'Accommodation';
+            }
+            $form_title = '<h3 class="hb-title hb-title-search-form">' .
+                esc_html( 'Check prijs en beschikbaarheid voor ' . $accom_title ) .
+            '</h3>';
+        }
         $form_class = 'hb-booking-search-form';
 
         $markup = $this->get_default_search_form_markup();
@@ -1365,8 +1413,8 @@ class GoldenStay_HBook_Compat {
 
         // Labels / placeholders
         if ( $search_placeholder === 'yes' ) {
-            $markup = str_replace( '[check_in_placeholder]', esc_html__( 'Check-in', 'goldenstay-manager' ), $markup );
-            $markup = str_replace( '[check_out_placeholder]', esc_html__( 'Check-out', 'goldenstay-manager' ), $markup );
+            $markup = str_replace( '[check_in_placeholder]', esc_html( 'Aankomst' ), $markup );
+            $markup = str_replace( '[check_out_placeholder]', esc_html( 'Vertrek' ), $markup );
             $markup = str_replace( '[check_in_label]', '', $markup );
             $markup = str_replace( '[check_out_label]', '', $markup );
             $markup = str_replace( '[adults_label]', '', $markup );
@@ -1375,10 +1423,10 @@ class GoldenStay_HBook_Compat {
         } else {
             $markup = str_replace( '[check_in_placeholder]', '', $markup );
             $markup = str_replace( '[check_out_placeholder]', '', $markup );
-            $markup = str_replace( '[check_in_label]', '<label for="check-in-date">' . esc_html__( 'Check-in', 'goldenstay-manager' ) . '</label>', $markup );
-            $markup = str_replace( '[check_out_label]', '<label for="check-out-date">' . esc_html__( 'Check-out', 'goldenstay-manager' ) . '</label>', $markup );
-            $markup = str_replace( '[adults_label]', '<label for="adults">' . esc_html__( 'Adults', 'goldenstay-manager' ) . '</label>', $markup );
-            $markup = str_replace( '[children_label]', '<label for="children">' . esc_html__( 'Children', 'goldenstay-manager' ) . '</label>', $markup );
+            $markup = str_replace( '[check_in_label]', '<label for="check-in-date">' . esc_html( 'Aankomst' ) . '</label>', $markup );
+            $markup = str_replace( '[check_out_label]', '<label for="check-out-date">' . esc_html( 'Vertrek' ) . '</label>', $markup );
+            $markup = str_replace( '[adults_label]', '<label for="adults">' . esc_html( 'Volwassenen' ) . '</label>', $markup );
+            $markup = str_replace( '[children_label]', '<label for="children">' . esc_html( 'Kinderen' ) . '</label>', $markup );
             $markup = str_replace( '[search_label]', '<label for="hb-search-form-submit">&nbsp;</label>', $markup );
         }
 
@@ -1407,28 +1455,15 @@ class GoldenStay_HBook_Compat {
 
         // Strings
         $strings = array(
-            'chosen_check_in' => esc_html__( 'Check-in:', 'goldenstay-manager' ),
-            'chosen_check_out' => esc_html__( 'Check-out:', 'goldenstay-manager' ),
-            'chosen_adults' => esc_html__( 'Adults:', 'goldenstay-manager' ),
-            'chosen_children' => esc_html__( 'Children:', 'goldenstay-manager' ),
-            'change_search_button' => esc_html__( 'Change search', 'goldenstay-manager' ),
-            'search_button' => esc_html__( 'Search', 'goldenstay-manager' ),
+            'chosen_check_in' => esc_html( 'Aankomst:' ),
+            'chosen_check_out' => esc_html( 'Vertrek:' ),
+            'chosen_adults' => esc_html( 'Volwassenen:' ),
+            'chosen_children' => esc_html( 'Kinderen:' ),
+            'change_search_button' => esc_html( 'WIJZIG ZOEKOPDRACHT' ),
+            'search_button' => esc_html( 'ZOEK' ),
         );
         foreach ( $strings as $k => $v ) {
             $markup = str_replace( '[string_' . $k . ']', $v, $markup );
-        }
-
-        // Match original HBook behavior:
-        // - on hb_accommodation pages, the booking form is scoped to that accommodation
-        // - otherwise it defaults to "all"
-        $page_accom_id = 0;
-        if ( ! empty( $atts['accom_id'] ) && $atts['accom_id'] !== 'all' ) {
-            $page_accom_id = intval( $atts['accom_id'] );
-        } else {
-            $current_post_id = get_the_ID();
-            if ( $current_post_id && get_post_type( $current_post_id ) === 'hb_accommodation' ) {
-                $page_accom_id = intval( $current_post_id );
-            }
         }
 
         $status_days_for_datepick = array();
@@ -1461,7 +1496,13 @@ class GoldenStay_HBook_Compat {
         }
 
         // Wrap to provide booking rules for hb-datepick.js
-        $out = '<div class="hbook-wrapper" data-gs-hb-compat="1" ' .
+        static $gs_booking_form_num = 0;
+        $gs_booking_form_num++;
+        $wrapper_classes = 'hbook-wrapper hbook-wrapper-booking-form';
+        if ( $page_accom_id ) {
+            $wrapper_classes .= ' hb-accom-page';
+        }
+        $out = '<div id="' . esc_attr( 'hbook-booking-form-' . $gs_booking_form_num ) . '" class="' . esc_attr( $wrapper_classes ) . '" data-gs-hb-compat="1" ' .
             'data-booking-rules=\'' . esc_attr( wp_json_encode( $wrapper_rules ) ) . '\' ' .
             ( $page_accom_id ? 'data-page-accom-id="' . esc_attr( $page_accom_id ) . '" ' : '' ) .
             '>';
@@ -1489,17 +1530,8 @@ class GoldenStay_HBook_Compat {
 
         $out .= $markup;
 
-        // Placeholder for AJAX-rendered results (and server-side fallback below)
-        $out .= '<div class="gs-hb-search-results" aria-live="polite">';
-        if ( $page_accom_id && $check_in && $check_out && $search_only === 'no' ) {
-            $calc = $this->build_hb_calc_prices_result( $page_accom_id, $check_in, $check_out, $adults, $children );
-            if ( ! empty( $calc['success'] ) && ! empty( $calc['mark_up'] ) ) {
-                $out .= $calc['mark_up'];
-            } else if ( ! empty( $calc['message'] ) ) {
-                $out .= '<p class="hb-search-error" style="display:block;">' . esc_html( $calc['message'] ) . '</p>';
-            }
-        }
-        $out .= '</div>';
+        // Placeholder for AJAX-rendered results.
+        $out .= '<div class="gs-hb-search-results" aria-live="polite"></div>';
 
         if ( $search_only === 'no' && ! $page_accom_id ) {
             // Show calendars (prices + blocked days) for all accommodations as a simple replacement for HBook results.
@@ -1516,7 +1548,7 @@ class GoldenStay_HBook_Compat {
         $max = intval( $max );
         $options = '';
         if ( $placeholder_mode === 'yes' ) {
-            $label = $key === 'adults' ? esc_html__( 'Adults', 'goldenstay-manager' ) : esc_html__( 'Children', 'goldenstay-manager' );
+            $label = $key === 'adults' ? esc_html( 'Volwassenen' ) : esc_html( 'Kinderen' );
             $options .= '<option selected disabled>' . esc_html( $label ) . '</option>';
         }
         for ( $i = $min; $i <= $max; $i++ ) {

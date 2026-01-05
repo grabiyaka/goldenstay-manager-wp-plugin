@@ -85,7 +85,7 @@
 
     var $results = $wrapper.find('.gs-hb-search-results')
     if ($results.length) {
-      $results.html('<div class="gs-hb-loading">Calculating...</div>')
+      $results.html('<div class="gs-hb-loading">Zoeken ...</div>')
     }
 
     setFormLoading($form, true)
@@ -103,6 +103,20 @@
         if (response && response.success && response.data && response.data.mark_up !== undefined) {
           if ($results.length) {
             $results.html(response.data.mark_up || '')
+            // HBook CSS hides .hb-accom-list by default; show it for our injected result.
+            $results.find('.hb-accom-list').show()
+          }
+
+          // Mimic HBook UX: collapse form to summary + show "change search" button
+          var $summary = $form.find('.hb-searched-summary')
+          var $fields = $form.find('.hb-search-fields-and-submit')
+          if ($summary.length && $fields.length) {
+            $summary.find('.hb-chosen-check-in-date span').text(checkIn)
+            $summary.find('.hb-chosen-check-out-date span').text(checkOut)
+            $summary.find('.hb-chosen-adults span').text(String(adults))
+            $summary.find('.hb-chosen-children span').text(String(children))
+            $fields.hide()
+            $summary.show()
           }
           return
         }
@@ -143,6 +157,49 @@
     })
 
     return false
+  })
+
+  // "Change search" button: expand form again and clear results (matches original flow)
+  $(document).on(
+    'click',
+    '.hbook-wrapper[data-gs-hb-compat="1"] .hb-change-search-wrapper input[type="submit"]',
+    function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.stopImmediatePropagation) e.stopImmediatePropagation()
+
+      var $form = $(this).closest('form.hb-booking-search-form')
+      var $wrapper = $form.closest('.hbook-wrapper[data-gs-hb-compat="1"]')
+
+      debugLog('[GS HB] change search clicked')
+
+      var $summary = $form.find('.hb-searched-summary')
+      var $fields = $form.find('.hb-search-fields-and-submit')
+      if ($summary.length) $summary.hide()
+      if ($fields.length) $fields.show()
+
+      var $results = $wrapper.find('.gs-hb-search-results')
+      if ($results.length) $results.empty()
+
+      showFormError($form, '')
+
+      return false
+    },
+  )
+
+  // Ensure initial page load does not show any result blocks.
+  $(function () {
+    $('.hbook-wrapper[data-gs-hb-compat="1"]').each(function () {
+      var $wrapper = $(this)
+      $wrapper.find('.gs-hb-search-results').empty()
+      var $form = $wrapper.find('form.hb-booking-search-form')
+      if ($form.length) {
+        $form.find('.hb-searched-summary').hide()
+        // Keep fields visible by default
+        $form.find('.hb-search-fields-and-submit').show()
+        showFormError($form, '')
+      }
+    })
   })
 
   // Capture-phase submit interceptor:

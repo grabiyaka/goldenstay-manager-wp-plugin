@@ -3,12 +3,6 @@
  * Keep selectors scoped under `.hbook-wrapper` to avoid conflicts.
  */
 
-.hbook-wrapper .hb-clearfix:after {
-  content: "";
-  display: table;
-  clear: both;
-}
-
 .hbook-wrapper .gs-hb-search-results {
   margin: 0;
   padding: 0;
@@ -18,54 +12,7 @@
   display: none;
 }
 
-.hbook-wrapper .hb-accom-step-wrapper,
-.hbook-wrapper .hb-accom-list {
-  display: block;
-}
-
 .hbook-wrapper .gs-hb-search-results .gs-hb-loading {
   color: dimgray;
   padding: 10px 0;
 }
-
-.hbook-wrapper .hb-accom-desc {
-  margin: 12px 0;
-}
-
-.hbook-wrapper .hb-accom-price {
-  float: left;
-  font-size: 30px;
-  font-weight: bold;
-  line-height: 45px;
-  margin-right: 8px;
-}
-
-.hbook-wrapper .hb-accom-price-caption {
-  float: left;
-  font-size: 12px;
-  line-height: 14px;
-  margin: 22px 0 15px;
-}
-
-.hbook-wrapper .hb-price-breakdown,
-.hbook-wrapper .hb-price-bd-hide-text,
-.hbook-wrapper .hb-hidden-price-breakdown {
-  display: none;
-}
-
-.hbook-wrapper .hb-price-breakdown-title {
-  display: block;
-  font-weight: bold;
-}
-
-.hbook-wrapper .hb-price-breakdown-section {
-  display: block;
-}
-
-.hbook-wrapper .hb-search-error {
-  display: none;
-  color: darkred;
-  margin: 10px 0 0;
-}
-
-
