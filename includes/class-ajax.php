@@ -20,6 +20,7 @@ class GoldenStay_Ajax {
         add_action( 'wp_ajax_goldenstay_toggle_reservation_visibility', array( __CLASS__, 'ajax_toggle_reservation_visibility' ) );
         
         // Public AJAX (no auth required)
+        add_action( 'wp_ajax_goldenstay_get_properties_public', array( __CLASS__, 'ajax_get_properties' ) );
         add_action( 'wp_ajax_nopriv_goldenstay_get_properties_public', array( __CLASS__, 'ajax_get_properties' ) );
         add_action( 'wp_ajax_nopriv_goldenstay_get_property_public', array( __CLASS__, 'ajax_get_property_public' ) );
         add_action( 'wp_ajax_nopriv_goldenstay_check_availability', array( __CLASS__, 'ajax_check_availability' ) );
@@ -180,22 +181,31 @@ class GoldenStay_Ajax {
      * AJAX: Get properties from API
      */
     public static function ajax_get_properties() {
-        $nonce_name = is_admin() ? 'goldenstay_admin_nonce' : 'goldenstay_frontend_nonce';
+        $action = isset( $_REQUEST['action'] ) ? sanitize_key( (string) $_REQUEST['action'] ) : '';
+        $is_public = ( $action === 'goldenstay_get_properties_public' );
+
+        $nonce_name = $is_public ? 'goldenstay_frontend_nonce' : 'goldenstay_admin_nonce';
         check_ajax_referer( $nonce_name, 'nonce' );
+
+        if ( ! $is_public && ! current_user_can( 'manage_options' ) ) {
+            wp_send_json_error( array( 'message' => 'You do not have permission to perform this action' ) );
+        }
         
         $token = GoldenStay_Manager::get_api_token();
-        if ( is_admin() && empty( $token ) ) {
+        if ( ! $is_public && empty( $token ) ) {
             wp_send_json_error( array( 'message' => 'Not authenticated. Please login first.' ) );
         }
         
         $api_url = GoldenStay_Manager::get_api_url();
         
-        $args = array( 'timeout' => 30 );
+        $args = array(
+            'timeout' => 45,
+            'headers' => array(
+                'Accept' => 'application/json',
+            ),
+        );
         if ( ! empty( $token ) ) {
-            $args['headers'] = array(
-                'Content-Type' => 'application/json',
-                'Authorization' => $token,
-            );
+            $args['headers']['Authorization'] = $token;
         }
         
         $response = wp_remote_get( trailingslashit( $api_url ) . 'property', $args );
@@ -205,20 +215,23 @@ class GoldenStay_Ajax {
         }
         
         $status_code = wp_remote_retrieve_response_code( $response );
-        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+        $raw_body = wp_remote_retrieve_body( $response );
         
         if ( $status_code === 200 ) {
-            wp_send_json_success( array( 
-                'properties' => $body,
-                'count' => is_array( $body ) ? count( $body ) : 0,
-            ));
+            // NOTE: /property response can be very large (10MB+). Avoid json_decode + wp_send_json()
+            // which can exceed PHP memory limit in admin-ajax.
+            nocache_headers();
+            header( 'Content-Type: application/json; charset=' . get_option( 'blog_charset' ) );
+            echo $raw_body;
+            wp_die();
         } else if ( $status_code === 401 ) {
             wp_send_json_error( array( 
                 'message' => 'Authentication expired. Please login again.',
                 'code' => 'auth_expired'
             ));
         } else {
-            $error_message = $body['message'] ?? $body['error'] ?? 'Failed to fetch properties';
+            $body = json_decode( $raw_body, true );
+            $error_message = ( is_array( $body ) ? ( $body['message'] ?? $body['error'] ?? null ) : null ) ?: 'Failed to fetch properties';
             wp_send_json_error( array( 'message' => $error_message ) );
         }
     }

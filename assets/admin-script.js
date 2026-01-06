@@ -195,31 +195,49 @@
             dataType: 'json',
             success: function(response) {
                 $loading.hide();
-                
-                if (response.success) {
-                    const properties = response.data.properties;
-                    
-                    if (properties && properties.length > 0) {
-                        renderProperties(properties);
-                        $list.show();
-                    } else {
-                        $empty.show();
-                    }
+
+                // New format: API array is proxied directly to avoid PHP memory blowups.
+                // Backward compatible: also supports { success: true, data: { properties } }.
+                let properties = null;
+                if (Array.isArray(response)) {
+                    properties = response;
+                } else if (response && response.success) {
+                    properties = response.data && response.data.properties ? response.data.properties : [];
                 } else {
-                    showPropertiesError(response.data.message);
-                    
+                    const message =
+                        (response && response.data && response.data.message)
+                            ? response.data.message
+                            : 'Failed to load properties';
+                    showPropertiesError(message);
+
                     // If auth expired, show login link
-                    if (response.data.code === 'auth_expired') {
+                    if (response && response.data && response.data.code === 'auth_expired') {
                         $('#goldenstay-properties-error-message').append(
                             ' <a href="' + goldenStayAdmin.adminUrl + 'admin.php?page=goldenstay-settings">Login again</a>'
                         );
                     }
+                    return;
+                }
+
+                if (properties && properties.length > 0) {
+                    renderProperties(properties);
+                    $list.show();
+                } else {
+                    $empty.show();
                 }
             },
             error: function(xhr, status, error) {
                 $loading.hide();
-                showPropertiesError('An error occurred while loading properties. Please try again.');
-                console.error('AJAX Error:', error);
+                let msg = 'An error occurred while loading properties. Please try again.';
+                if (xhr && xhr.responseText) {
+                    // Helpful debugging info (truncated)
+                    const preview = ('' + xhr.responseText).trim().slice(0, 200);
+                    if (preview) {
+                        console.error('AJAX response preview:', preview);
+                    }
+                }
+                showPropertiesError(msg);
+                console.error('AJAX Error:', status, error);
             }
         });
     }
