@@ -216,8 +216,8 @@ class GoldenStay_HBook_Compat {
         $start_of_week = get_option( 'start_of_week', 0 );
         $first_day = is_numeric( $start_of_week ) ? intval( $start_of_week ) : 0;
 
-        // HBook uses datepick format tokens (yyyy-mm-dd)
-        $hb_date_format = 'yyyy-mm-dd';
+        // HBook uses jQuery datepick format tokens. Original Bosvillarijs UX expects dd-mm-yyyy.
+        $hb_date_format = 'dd-mm-yyyy';
 
         // Month and day names
         global $wp_locale;
@@ -1778,7 +1778,7 @@ class GoldenStay_HBook_Compat {
                 $msg = esc_html( $accom_name ) . ' is niet beschikbaar op de door jou gekozen data';
             }
             $mark_up = '<div class="hb-accom-step-wrapper hb-step-wrapper">' .
-                '<div class="hb-accom-list">' .
+                '<div class="hb-accom-list hb-multi-accom-choices hb-accom-page-one-result">' .
                     '<div class="hb-accom hb-clearfix">' .
                         '<div class="hb-accom-desc">' . $msg . '</div>' .
                     '</div>' .
@@ -1836,7 +1836,7 @@ class GoldenStay_HBook_Compat {
 
         $mark_up = '' .
             '<div class="hb-accom-step-wrapper hb-step-wrapper">' .
-                '<div class="hb-accom-list">' .
+                '<div class="hb-accom-list hb-multi-accom-choices hb-accom-page-one-result">' .
                     '<div class="hb-accom hb-clearfix">' .
                         '<div class="hb-accom-desc">' . $msg_available . '</div>' .
                         '<div class="hb-accom-price-total hb-clearfix">' .

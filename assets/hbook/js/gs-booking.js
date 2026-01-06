@@ -138,6 +138,17 @@
     showPoliciesError($detailsForm, '')
   }
 
+  function formatSummaryDate(str) {
+    var value = (str || '').toString().trim()
+    if (!value) return value
+    // If backend stored yyyy-mm-dd (or user pasted it), show dd-mm-yyyy to match HBook NL UX.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      var parts = value.split('-')
+      return parts[2] + '-' + parts[1] + '-' + parts[0]
+    }
+    return value
+  }
+
   function handleBookNow($wrapper) {
     if (!$wrapper || !$wrapper.length) return
 
@@ -337,6 +348,15 @@
             $results.find('.hb-accom-list').show()
           }
 
+          // Format injected dates (e.g. spans with .hb-format-date) using hb_date_format.
+          try {
+            if (window.hb_format_date && typeof window.hb_format_date === 'function') {
+              window.hb_format_date()
+            }
+          } catch (_) {
+            // ignore
+          }
+
           // The injected markup contains new step wrappers/forms; ensure responsive classes are correct.
           resizeForms()
           if ($results.length) {
@@ -349,8 +369,8 @@
           var $summary = $form.find('.hb-searched-summary')
           var $fields = $form.find('.hb-search-fields-and-submit')
           if ($summary.length && $fields.length) {
-            $summary.find('.hb-chosen-check-in-date span').text(checkIn)
-            $summary.find('.hb-chosen-check-out-date span').text(checkOut)
+            $summary.find('.hb-chosen-check-in-date span').text(formatSummaryDate(checkIn))
+            $summary.find('.hb-chosen-check-out-date span').text(formatSummaryDate(checkOut))
             $summary.find('.hb-chosen-adults span').text(String(adults))
             $summary.find('.hb-chosen-children span').text(String(children))
             $fields.hide()

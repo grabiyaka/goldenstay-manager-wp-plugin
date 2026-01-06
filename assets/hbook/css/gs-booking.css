@@ -9,6 +9,29 @@
   --gs-hb-btn-hover: #2f5b43;
 }
 
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-title,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-searched-summary,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-searched-summary p,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-searched-summary span,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-accom-desc,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-accom-price,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-accom-price-caption,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-price-breakdown,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-price-breakdown-title,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-price-breakdown-section {
+  color: var(--gs-hb-btn);
+}
+
+.hbook-wrapper[data-gs-hb-compat="1"] a.hb-view-price-breakdown {
+  color: var(--gs-hb-btn);
+  border-bottom: 0;
+}
+
+.hbook-wrapper[data-gs-hb-compat="1"] a.hb-view-price-breakdown:hover,
+.hbook-wrapper[data-gs-hb-compat="1"] a.hb-view-price-breakdown:focus {
+  color: var(--gs-hb-btn-hover);
+}
+
 .hbook-wrapper .gs-hb-search-results {
   margin: 0;
   padding: 0;
