@@ -25,6 +25,8 @@ class GoldenStay_HBook_Compat {
     private $last_calendar_fetch_debug = null;
     private $last_calendar_fetch_response = null;
     private $last_calendar_days_sample = array();
+    private $hbook_is_active = false;
+    private $original_shortcodes = array();
 
     public static function get_instance() {
         if ( null === self::$instance ) {
@@ -34,31 +36,20 @@ class GoldenStay_HBook_Compat {
     }
 
     private function __construct() {
-        // If original HBook plugin is active, do not override its shortcodes.
-        if ( class_exists( 'HBook' ) ) {
-            return;
-        }
+        $this->hbook_is_active = class_exists( 'HBook' );
 
-        // Make sure datepick assets are available before wp_head runs.
-        add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_hbook_assets' ) );
+        // Register shortcodes late so we can capture and optionally delegate to original HBook shortcodes.
+        add_action( 'init', array( $this, 'register_shortcodes' ), 9999 );
 
-        // Availability calendar assets are required for reservation page replacement.
-        add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_availability_assets' ) );
+        // Enqueue our assets only when needed (important when original HBook plugin is active).
+        add_action( 'wp_enqueue_scripts', array( $this, 'maybe_enqueue_assets' ), 20 );
 
         // HBook used to enable shortcodes inside classic Text widgets.
         // When HBook is disabled, Adomus sidebars may display raw [hb_*] text without this.
         add_filter( 'widget_text', 'do_shortcode' );
         add_filter( 'widget_text_content', 'do_shortcode' );
 
-        add_shortcode( 'hb_availability', array( $this, 'shortcode_availability' ) );
-        add_shortcode( 'hb_booking_form', array( $this, 'shortcode_booking_form' ) );
-
-        // Minimal stubs to avoid raw shortcodes in content when HBook is removed.
-        add_shortcode( 'hb_rates', array( $this, 'shortcode_not_implemented' ) );
-        add_shortcode( 'hb_accommodation_list', array( $this, 'shortcode_not_implemented' ) );
-        add_shortcode( 'hb_starting_price', array( $this, 'shortcode_not_implemented' ) );
-        add_shortcode( 'hb_reservation_summary', array( $this, 'shortcode_not_implemented' ) );
-        add_shortcode( 'hb_paypal_confirmation', array( $this, 'shortcode_not_implemented' ) );
+        // Shortcodes are registered in register_shortcodes()
 
         // Public AJAX: calculate availability + price breakdown for booking form (replacement for HBook search results).
         add_action( 'wp_ajax_nopriv_goldenstay_hb_calc_prices', array( $this, 'ajax_hb_calc_prices' ) );
@@ -77,7 +68,98 @@ class GoldenStay_HBook_Compat {
         add_action( 'wp_ajax_goldenstay_hb_book_now', array( $this, 'ajax_hb_book_now' ) );
     }
 
-    public function shortcode_not_implemented() {
+    public function register_shortcodes() {
+        global $shortcode_tags;
+
+        $tags = array( 'hb_booking_form', 'hb_availability' );
+        foreach ( $tags as $tag ) {
+            if ( isset( $shortcode_tags[ $tag ] ) && ! isset( $this->original_shortcodes[ $tag ] ) ) {
+                $this->original_shortcodes[ $tag ] = $shortcode_tags[ $tag ];
+            }
+        }
+
+        // Override main HBook shortcodes with conditional delegation.
+        add_shortcode( 'hb_availability', array( $this, 'shortcode_availability' ) );
+        add_shortcode( 'hb_booking_form', array( $this, 'shortcode_booking_form' ) );
+
+        // Minimal stubs to avoid raw shortcodes in content when HBook is removed.
+        if ( ! $this->hbook_is_active ) {
+            add_shortcode( 'hb_rates', array( $this, 'shortcode_not_implemented' ) );
+            add_shortcode( 'hb_accommodation_list', array( $this, 'shortcode_not_implemented' ) );
+            add_shortcode( 'hb_starting_price', array( $this, 'shortcode_not_implemented' ) );
+            add_shortcode( 'hb_reservation_summary', array( $this, 'shortcode_not_implemented' ) );
+            add_shortcode( 'hb_paypal_confirmation', array( $this, 'shortcode_not_implemented' ) );
+        }
+    }
+
+    public function maybe_enqueue_assets() {
+        // If HBook is not active, our compat layer is the only implementation → always enqueue.
+        if ( ! $this->hbook_is_active ) {
+            $this->enqueue_hbook_assets();
+            $this->enqueue_availability_assets();
+            return;
+        }
+
+        // If HBook is active, enqueue our assets only when current accommodation is set to use GoldenStay booking.
+        $post = get_post();
+        if ( $post && $post->post_type === 'hb_accommodation' ) {
+            if ( GoldenStay_Accommodation_Mapping::is_goldenstay_booking_enabled_for_accom( $post->ID ) ) {
+                $this->enqueue_hbook_assets();
+                $this->enqueue_availability_assets();
+            }
+        }
+    }
+
+    private function should_use_goldenstay_for_accom( $accom_id ) {
+        if ( ! $this->hbook_is_active ) {
+            return true;
+        }
+        $accom_id = intval( $accom_id );
+        if ( ! $accom_id ) {
+            return false;
+        }
+        return GoldenStay_Accommodation_Mapping::is_goldenstay_booking_enabled_for_accom( $accom_id );
+    }
+
+    private function call_shortcode_callback( $callback, $atts, $content, $shortcode_name ) {
+        if ( ! $callback ) {
+            return '';
+        }
+
+        try {
+            $args = array( $atts, $content, $shortcode_name );
+            if ( is_array( $callback ) ) {
+                $ref = new ReflectionMethod( $callback[0], $callback[1] );
+                if ( $ref->isVariadic() ) {
+                    return call_user_func_array( $callback, $args );
+                }
+                $count = $ref->getNumberOfParameters();
+                return call_user_func_array( $callback, array_slice( $args, 0, $count ) );
+            }
+            if ( $callback instanceof Closure ) {
+                $ref = new ReflectionFunction( $callback );
+                if ( $ref->isVariadic() ) {
+                    return call_user_func_array( $callback, $args );
+                }
+                $count = $ref->getNumberOfParameters();
+                return call_user_func_array( $callback, array_slice( $args, 0, $count ) );
+            }
+            if ( is_string( $callback ) && function_exists( $callback ) ) {
+                $ref = new ReflectionFunction( $callback );
+                if ( $ref->isVariadic() ) {
+                    return call_user_func_array( $callback, $args );
+                }
+                $count = $ref->getNumberOfParameters();
+                return call_user_func_array( $callback, array_slice( $args, 0, $count ) );
+            }
+        } catch ( Throwable $e ) {
+            // ignore and fall through
+        }
+
+        return '';
+    }
+
+    public function shortcode_not_implemented( $atts = array(), $content = null, $shortcode_name = '' ) {
         return '';
     }
 
@@ -2600,7 +2682,26 @@ class GoldenStay_HBook_Compat {
         return $status_days;
     }
 
-    public function shortcode_availability( $atts ) {
+    public function shortcode_availability( $atts, $content = null, $shortcode_name = 'hb_availability' ) {
+        // Delegate to original HBook when enabled (per-accommodation toggle).
+        $accom_id = isset( $atts['accom_id'] ) ? $atts['accom_id'] : '';
+        $accom_id = $accom_id === 'all' ? '' : $accom_id;
+        $accom_id = $accom_id ? intval( $accom_id ) : 0;
+        if ( ! $accom_id && get_the_ID() ) {
+            $accom_id = intval( get_the_ID() );
+        }
+        if ( ! $this->should_use_goldenstay_for_accom( $accom_id ) ) {
+            if ( isset( $this->original_shortcodes['hb_availability'] ) ) {
+                return $this->call_shortcode_callback(
+                    $this->original_shortcodes['hb_availability'],
+                    $atts,
+                    $content,
+                    $shortcode_name
+                );
+            }
+            return '';
+        }
+
         $atts = shortcode_atts(
             array(
                 'accom_id' => '',
@@ -2711,7 +2812,7 @@ class GoldenStay_HBook_Compat {
         return $out;
     }
 
-    public function shortcode_booking_form( $atts ) {
+    public function shortcode_booking_form( $atts, $content = null, $shortcode_name = 'hb_booking_form' ) {
         $atts = shortcode_atts(
             array(
                 'form_id' => '',
@@ -2724,6 +2825,28 @@ class GoldenStay_HBook_Compat {
             $atts,
             'hb_booking_form'
         );
+
+        // If HBook is active, allow per-accommodation delegation back to HBook.
+        $delegate_accom_id = 0;
+        if ( ! empty( $atts['accom_id'] ) && $atts['accom_id'] !== 'all' ) {
+            $delegate_accom_id = intval( $atts['accom_id'] );
+        } else {
+            $current_post_id = get_the_ID();
+            if ( $current_post_id && get_post_type( $current_post_id ) === 'hb_accommodation' ) {
+                $delegate_accom_id = intval( $current_post_id );
+            }
+        }
+        if ( ! $this->should_use_goldenstay_for_accom( $delegate_accom_id ) ) {
+            if ( isset( $this->original_shortcodes['hb_booking_form'] ) ) {
+                return $this->call_shortcode_callback(
+                    $this->original_shortcodes['hb_booking_form'],
+                    $atts,
+                    $content,
+                    $shortcode_name
+                );
+            }
+            return '';
+        }
 
         $this->enqueue_hbook_assets();
 

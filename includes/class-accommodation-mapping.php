@@ -12,6 +12,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 class GoldenStay_Accommodation_Mapping {
 
     private static $instance = null;
+    const META_PROPERTY_ID = 'goldenstay_property_id';
+    const META_USE_GOLDENSTAY_BOOKING = 'goldenstay_use_goldenstay_booking';
 
     public static function get_instance() {
         if ( null === self::$instance ) {
@@ -26,8 +28,13 @@ class GoldenStay_Accommodation_Mapping {
     }
 
     public static function get_property_id_for_accom( $accom_id ) {
-        $value = get_post_meta( $accom_id, 'goldenstay_property_id', true );
+        $value = get_post_meta( $accom_id, self::META_PROPERTY_ID, true );
         return $value ? intval( $value ) : 0;
+    }
+
+    public static function is_goldenstay_booking_enabled_for_accom( $accom_id ) {
+        $value = get_post_meta( $accom_id, self::META_USE_GOLDENSTAY_BOOKING, true );
+        return $value ? true : false;
     }
 
     public function add_meta_boxes() {
@@ -44,7 +51,8 @@ class GoldenStay_Accommodation_Mapping {
     public function render_meta_box( $post ) {
         wp_nonce_field( 'goldenstay_accom_mapping', 'goldenstay_accom_mapping_nonce' );
 
-        $property_id = get_post_meta( $post->ID, 'goldenstay_property_id', true );
+        $property_id = get_post_meta( $post->ID, self::META_PROPERTY_ID, true );
+        $use_goldenstay_booking = get_post_meta( $post->ID, self::META_USE_GOLDENSTAY_BOOKING, true );
         ?>
         <p style="margin-top: 0;">
             <strong>API Property ID</strong>
@@ -61,6 +69,18 @@ class GoldenStay_Accommodation_Mapping {
                 style="width: 100%;"
                 placeholder="e.g. 123"
             />
+        </p>
+        <p style="margin-top: 14px;">
+            <label for="goldenstay_use_goldenstay_booking" style="display:flex;align-items:center;gap:8px;">
+                <input
+                    type="checkbox"
+                    id="goldenstay_use_goldenstay_booking"
+                    name="goldenstay_use_goldenstay_booking"
+                    value="1"
+                    <?php checked( $use_goldenstay_booking, '1' ); ?>
+                />
+                <span><strong>Use GoldenStay booking (override HBook)</strong></span>
+            </label>
         </p>
         <p class="description" style="margin-bottom: 0;">
             This links the accommodation to your GoldenStay API property.
@@ -93,9 +113,16 @@ class GoldenStay_Accommodation_Mapping {
 
         $property_id = isset( $_POST['goldenstay_property_id'] ) ? intval( $_POST['goldenstay_property_id'] ) : 0;
         if ( $property_id > 0 ) {
-            update_post_meta( $post_id, 'goldenstay_property_id', $property_id );
+            update_post_meta( $post_id, self::META_PROPERTY_ID, $property_id );
         } else {
-            delete_post_meta( $post_id, 'goldenstay_property_id' );
+            delete_post_meta( $post_id, self::META_PROPERTY_ID );
+        }
+
+        $use_goldenstay_booking = isset( $_POST['goldenstay_use_goldenstay_booking'] ) ? intval( $_POST['goldenstay_use_goldenstay_booking'] ) : 0;
+        if ( $use_goldenstay_booking ) {
+            update_post_meta( $post_id, self::META_USE_GOLDENSTAY_BOOKING, '1' );
+        } else {
+            delete_post_meta( $post_id, self::META_USE_GOLDENSTAY_BOOKING );
         }
     }
 }
