@@ -1033,17 +1033,66 @@ class GoldenStay_HBook_Compat {
 
         $response = $this->api_get_json( $endpoint, true );
         if ( is_wp_error( $response ) ) {
-            return false;
+            return $this->is_available_for_period_via_reservations( $property_id, $date_from, $date_to );
         }
 
         $status_code = wp_remote_retrieve_response_code( $response );
         $days = json_decode( wp_remote_retrieve_body( $response ), true );
         if ( $status_code !== 200 || ! is_array( $days ) ) {
-            return false;
+            return $this->is_available_for_period_via_reservations( $property_id, $date_from, $date_to );
         }
 
         foreach ( $days as $day ) {
             if ( is_array( $day ) && $this->is_calendar_day_taken( $day ) ) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function is_available_for_period_via_reservations( $property_id, $date_from, $date_to ) {
+        $hidden_ids = $this->get_hidden_reservation_ids_for_property( $property_id );
+        $reservations = $this->fetch_reservations_for_property( $property_id );
+        return $this->is_range_free_from_reservations( $reservations, $date_from, $date_to, $hidden_ids );
+    }
+
+    private function is_range_free_from_reservations( $reservations, $range_from, $range_to, $hidden_ids = array() ) {
+        if ( ! is_array( $reservations ) || empty( $reservations ) ) {
+            return true;
+        }
+
+        $range_from_ts = strtotime( $range_from );
+        $range_to_ts = strtotime( $range_to );
+
+        if ( false === $range_from_ts || false === $range_to_ts ) {
+            return false;
+        }
+
+        foreach ( $reservations as $reservation ) {
+            if ( ! is_array( $reservation ) ) {
+                continue;
+            }
+
+            $reservation_id = isset( $reservation['id'] ) ? intval( $reservation['id'] ) : 0;
+            if ( $reservation_id && in_array( $reservation_id, (array) $hidden_ids, true ) ) {
+                continue;
+            }
+
+            $check_in = isset( $reservation['date_from'] ) ? substr( $reservation['date_from'], 0, 10 ) : null;
+            $check_out = isset( $reservation['date_to'] ) ? substr( $reservation['date_to'], 0, 10 ) : null;
+
+            if ( ! $check_in || ! $check_out ) {
+                continue;
+            }
+
+            $check_in_ts = strtotime( $check_in );
+            $check_out_ts = strtotime( $check_out );
+            if ( false === $check_in_ts || false === $check_out_ts ) {
+                continue;
+            }
+
+            if ( $check_in_ts < $range_to_ts && $check_out_ts > $range_from_ts ) {
                 return false;
             }
         }
