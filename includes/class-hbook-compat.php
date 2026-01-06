@@ -1128,9 +1128,16 @@ class GoldenStay_HBook_Compat {
         }
 
         foreach ( $days as $day ) {
-            if ( is_array( $day ) && $this->is_calendar_day_taken( $day ) ) {
+            if ( is_array( $day ) && $this->is_calendar_day_blocked_for_booking( $day ) ) {
                 return array( 'is_available' => false, 'reason' => 'taken' );
             }
+        }
+
+        // Confirmed reservations only (status_id=1)
+        $hidden_ids = $this->get_hidden_reservation_ids_for_property( $property_id );
+        $confirmed_reservations = $this->fetch_reservations_via_legacy_endpoint( $property_id );
+        if ( ! $this->is_range_free_from_reservations( $confirmed_reservations, $date_from, $date_to, $hidden_ids ) ) {
+            return array( 'is_available' => false, 'reason' => 'taken' );
         }
 
         $min_stay = 1;
@@ -1932,8 +1939,8 @@ class GoldenStay_HBook_Compat {
         }
 
         // Cache across requests to avoid hammering PMS on every page view.
-        // v4: bump to invalidate older cached payloads (pre-min-stay support).
-        $transient_key = 'gs_hb_res_' . md5( 'v4|' . $cache_key );
+        // v5: bump to invalidate older cached payloads (confirmed-only reservations for calendar).
+        $transient_key = 'gs_hb_res_' . md5( 'v5|' . $cache_key );
         $cached = $debug_enabled ? null : get_transient( $transient_key );
         $cached_min_stay_by_day = $debug_enabled ? null : get_transient( $transient_key_min_stay_by_day );
         if ( ! $debug_enabled && is_array( $cached ) ) {
@@ -1967,6 +1974,14 @@ class GoldenStay_HBook_Compat {
         if ( $date_from && $date_to ) {
             $normalized = $this->fetch_calendar_days_period( $property_id, $date_from, $date_to );
             $raw_days_snapshot = $this->last_calendar_days_raw;
+            // Also fetch actual reservations (status_id=1 only) and merge with blocked days.
+            $confirmed_reservations = $this->fetch_reservations_via_legacy_endpoint( $property_id );
+            if ( is_array( $confirmed_reservations ) && count( $confirmed_reservations ) ) {
+                $normalized = array_merge(
+                    is_array( $normalized ) ? $normalized : array(),
+                    $this->filter_reservations_by_range( $confirmed_reservations, $date_from, $date_to )
+                );
+            }
         }
 
         if ( null === $normalized ) {
@@ -2045,10 +2060,29 @@ class GoldenStay_HBook_Compat {
         $this->last_calendar_days_sample = array_slice( $data, 0, 50 );
         $this->last_calendar_min_stay_by_day = $this->calendar_days_to_min_stay_by_day( $data );
 
-        return $this->calendar_days_to_reservations( $data );
+        // Important: for website calendar we only show reservations with status_id = 1.
+        // `calendar_day/period` does not provide reservation statuses, so we only derive
+        // hard-unavailable days here (blocks/units=0). Actual reservations are fetched
+        // via `/reservation/property` and filtered by status_id below.
+        return $this->calendar_days_to_blocked_reservations( $data );
     }
 
     private function fetch_reservations_via_legacy_endpoint( $property_id ) {
+        static $cache = array();
+
+        // Cache per property: this endpoint can be slow and returns many rows.
+        $property_id = intval( $property_id );
+        if ( $property_id && isset( $cache[ $property_id ] ) ) {
+            return $cache[ $property_id ];
+        }
+
+        $transient_key = 'gs_hb_res_legacy_' . md5( 'v1|' . intval( $property_id ) );
+        $cached = get_transient( $transient_key );
+        if ( is_array( $cached ) ) {
+            $cache[ $property_id ] = $cached;
+            return $cache[ $property_id ];
+        }
+
         $api_url = GoldenStay_Manager::get_api_url();
         $token = GoldenStay_Manager::get_api_token();
         if ( ! $token ) {
@@ -2096,9 +2130,14 @@ class GoldenStay_HBook_Compat {
             if ( ! is_array( $row ) ) {
                 continue;
             }
+            $status_id = isset( $row['status_id'] ) ? intval( $row['status_id'] ) : 0;
+            // Website calendar should show only confirmed reservations.
+            if ( $status_id !== 1 ) {
+                continue;
+            }
             $normalized[] = array(
                 'id' => isset( $row['id'] ) ? intval( $row['id'] ) : 0,
-                'status_id' => isset( $row['status_id'] ) ? intval( $row['status_id'] ) : 0,
+                'status_id' => $status_id,
                 'date_from' => isset( $row['date_from'] ) ? substr( $row['date_from'], 0, 10 ) : null,
                 'date_to' => isset( $row['date_to'] ) ? substr( $row['date_to'], 0, 10 ) : null,
                 'is_quote' => isset( $row['is_quote'] ) ? (bool) $row['is_quote'] : null,
@@ -2107,7 +2146,46 @@ class GoldenStay_HBook_Compat {
 
         $this->last_calendar_days_raw = array();
 
+        // Cache 5 minutes: good balance between freshness and performance.
+        set_transient( $transient_key, $normalized, 5 * MINUTE_IN_SECONDS );
+        $cache[ $property_id ] = $normalized;
         return $normalized;
+    }
+
+    private function filter_reservations_by_range( $reservations, $range_from, $range_to ) {
+        if ( ! is_array( $reservations ) || ! $range_from || ! $range_to ) {
+            return array();
+        }
+
+        $from_ts = strtotime( $range_from );
+        $to_ts = strtotime( $range_to );
+        if ( false === $from_ts || false === $to_ts ) {
+            return array();
+        }
+
+        $out = array();
+        foreach ( $reservations as $reservation ) {
+            if ( ! is_array( $reservation ) ) {
+                continue;
+            }
+            $check_in = isset( $reservation['date_from'] ) ? substr( (string) $reservation['date_from'], 0, 10 ) : null;
+            $check_out = isset( $reservation['date_to'] ) ? substr( (string) $reservation['date_to'], 0, 10 ) : null;
+            if ( ! $check_in || ! $check_out ) {
+                continue;
+            }
+            $check_in_ts = strtotime( $check_in );
+            $check_out_ts = strtotime( $check_out );
+            if ( false === $check_in_ts || false === $check_out_ts ) {
+                continue;
+            }
+
+            // Intersects [range_from, range_to] when check_in < range_to and check_out > range_from
+            if ( $check_in_ts < $to_ts && $check_out_ts > $from_ts ) {
+                $out[] = $reservation;
+            }
+        }
+
+        return $out;
     }
 
     private function calendar_days_to_reservations( $days ) {
@@ -2141,6 +2219,68 @@ class GoldenStay_HBook_Compat {
         foreach ( $filtered as $day ) {
             $date = substr( $day['date'], 0, 10 );
             $is_taken = $this->is_calendar_day_taken( $day );
+
+            if ( $is_taken ) {
+                if ( null === $current_start ) {
+                    $current_start = $date;
+                }
+                $previous_date = $date;
+                continue;
+            }
+
+            if ( null !== $current_start && $previous_date ) {
+                $reservations[] = array(
+                    'id' => 0,
+                    'date_from' => $current_start,
+                    'date_to' => date( 'Y-m-d', strtotime( $previous_date . ' +1 day' ) ),
+                );
+            }
+
+            $current_start = null;
+            $previous_date = null;
+        }
+
+        if ( null !== $current_start && $previous_date ) {
+            $reservations[] = array(
+                'id' => 0,
+                'date_from' => $current_start,
+                'date_to' => date( 'Y-m-d', strtotime( $previous_date . ' +1 day' ) ),
+            );
+        }
+
+        return $reservations;
+    }
+
+    private function calendar_days_to_blocked_reservations( $days ) {
+        if ( ! is_array( $days ) || empty( $days ) ) {
+            return array();
+        }
+
+        $filtered = array();
+        foreach ( $days as $day ) {
+            if ( empty( $day['date'] ) ) {
+                continue;
+            }
+            $filtered[] = $day;
+        }
+        if ( empty( $filtered ) ) {
+            return array();
+        }
+
+        usort(
+            $filtered,
+            function( $a, $b ) {
+                return strcmp( substr( $a['date'], 0, 10 ), substr( $b['date'], 0, 10 ) );
+            }
+        );
+
+        $reservations = array();
+        $current_start = null;
+        $previous_date = null;
+
+        foreach ( $filtered as $day ) {
+            $date = substr( $day['date'], 0, 10 );
+            $is_taken = $this->is_calendar_day_blocked_for_booking( $day );
 
             if ( $is_taken ) {
                 if ( null === $current_start ) {
@@ -2207,6 +2347,21 @@ class GoldenStay_HBook_Compat {
         }
 
         if ( $reservations > 0 ) {
+            return true;
+        }
+
+        if ( $units !== null && $units <= 0 ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function is_calendar_day_blocked_for_booking( $day ) {
+        $units = isset( $day['units'] ) ? intval( $day['units'] ) : null;
+        $is_blocked = ! empty( $day['is_blocked'] );
+
+        if ( $is_blocked ) {
             return true;
         }
 

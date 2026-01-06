@@ -32,6 +32,30 @@
   color: var(--gs-hb-btn-hover);
 }
 
+/* BOOK NOW loading spinner (details step) */
+.hbook-wrapper[data-gs-hb-compat="1"] form.gs-hb-details-step.gs-hb-book-now-loading .hb-confirm-button {
+  position: relative;
+}
+
+.hbook-wrapper[data-gs-hb-compat="1"] form.gs-hb-details-step.gs-hb-book-now-loading .hb-confirm-button:after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 18px;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 50%;
+  border: 2px solid rgba(66, 122, 91, 0.25);
+  border-top-color: var(--gs-hb-btn);
+  pointer-events: none;
+  animation: gs_hb_spin 0.8s linear infinite;
+}
+
+@keyframes gs_hb_spin {
+  to { transform: rotate(360deg); }
+}
+
 .hbook-wrapper .gs-hb-search-results {
   margin: 0;
   padding: 0;

@@ -25,6 +25,12 @@
     $form.find('input[type="submit"], button[type="submit"]').prop('disabled', !!isLoading)
   }
 
+  function setBookNowLoading($detailsForm, isLoading) {
+    if (!$detailsForm || !$detailsForm.length) return
+    setFormLoading($detailsForm, isLoading)
+    $detailsForm.toggleClass('gs-hb-book-now-loading', !!isLoading)
+  }
+
   function schedule(fn, delay) {
     var timer = null
     return function () {
@@ -244,7 +250,7 @@
 
     debugLog('[GS HB] book now payload:', payload)
 
-    setFormLoading($detailsForm, true)
+    setBookNowLoading($detailsForm, true)
     $wrapper.data('gsHbBookNowInProgress', true)
 
     $.ajax({
@@ -255,7 +261,7 @@
       success: function (response) {
         debugLog('[GS HB] book now response:', response)
         $wrapper.data('gsHbBookNowInProgress', false)
-        setFormLoading($detailsForm, false)
+        setBookNowLoading($detailsForm, false)
 
         if (response && response.success && response.data && response.data.payment_url) {
           window.location.href = String(response.data.payment_url)
@@ -270,7 +276,7 @@
       error: function (xhr, status, error) {
         debugLog('[GS HB] book now ajax error:', { status: status, error: error, xhr: xhr })
         $wrapper.data('gsHbBookNowInProgress', false)
-        setFormLoading($detailsForm, false)
+        setBookNowLoading($detailsForm, false)
         showDetailsError($detailsForm, 'Connection error. Please try again.')
       },
     })
