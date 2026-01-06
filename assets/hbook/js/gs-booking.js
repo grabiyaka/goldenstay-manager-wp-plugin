@@ -36,6 +36,183 @@
     if (message) window.alert(message)
   }
 
+  function showDetailsError($detailsForm, message) {
+    if (!$detailsForm || !$detailsForm.length) {
+      if (message) window.alert(message)
+      return
+    }
+
+    var $error = $detailsForm.find('.hb-confirm-error').first()
+    if ($error.length) {
+      var text = (message || '').toString()
+      if (!text) {
+        $error.text('')
+        $error.hide()
+        return
+      }
+      $error.text(text)
+      $error.show()
+      return
+    }
+
+    if (message) window.alert(message)
+  }
+
+  function showPoliciesError($detailsForm, message) {
+    if (!$detailsForm || !$detailsForm.length) {
+      if (message) window.alert(message)
+      return
+    }
+
+    var $error = $detailsForm.find('.hb-policies-error').first()
+    if ($error.length) {
+      var text = (message || '').toString()
+      if (!text) {
+        $error.text('')
+        $error.hide()
+        return
+      }
+      $error.text(text)
+      $error.show()
+      return
+    }
+
+    if (message) window.alert(message)
+  }
+
+  function clearDetailsErrors($detailsForm) {
+    if (!$detailsForm || !$detailsForm.length) return
+    showDetailsError($detailsForm, '')
+    showPoliciesError($detailsForm, '')
+  }
+
+  function handleBookNow($wrapper) {
+    if (!$wrapper || !$wrapper.length) return
+
+    if (!window.gsHbBooking || !gsHbBooking.ajaxUrl || !gsHbBooking.nonce) {
+      debugLog('[GS HB] book now: gsHbBooking config missing', window.gsHbBooking)
+      window.alert('Booking configuration is missing. Please reload the page.')
+      return
+    }
+
+    if ($wrapper.data('gsHbBookNowInProgress')) {
+      return
+    }
+
+    var $detailsForm = $wrapper.find('form.gs-hb-details-step').first()
+    if (!$detailsForm.length) return
+
+    clearDetailsErrors($detailsForm)
+
+    var accomId = parseInt($detailsForm.find('.hb-details-accom-ids').val(), 10) || 0
+    var checkIn = ($detailsForm.find('.hb-details-check-in').val() || '').trim()
+    var checkOut = ($detailsForm.find('.hb-details-check-out').val() || '').trim()
+    var adults = parseInt($detailsForm.find('.hb-details-adults').val(), 10)
+    var children = parseInt($detailsForm.find('.hb-details-children').val(), 10)
+
+    if (!Number.isFinite(adults)) adults = 1
+    if (!Number.isFinite(children)) children = 0
+
+    var firstName = ($detailsForm.find('input[name="hb_first_name"]').val() || '').trim()
+    var lastName = ($detailsForm.find('input[name="hb_last_name"]').val() || '').trim()
+    var email = ($detailsForm.find('input[name="hb_email"]').val() || '').trim()
+    var phone = ($detailsForm.find('input[name="hb_phone"]').val() || '').trim()
+    var address1 = ($detailsForm.find('input[name="hb_address_1"]').val() || '').trim()
+    var address2 = ($detailsForm.find('input[name="hb_address_2"]').val() || '').trim()
+    var city = ($detailsForm.find('input[name="hb_city"]').val() || '').trim()
+    var state = ($detailsForm.find('input[name="hb_state_province"]').val() || '').trim()
+    var countryIso = ($detailsForm.find('select[name="hb_country_iso"]').val() || '').trim()
+    var zipCode = ($detailsForm.find('input[name="hb_zip_code"]').val() || '').trim()
+
+    var termsAccepted = $detailsForm.find('input[name="hb_terms_and_cond"]').is(':checked')
+    var privacyAccepted = $detailsForm.find('input[name="hb_privacy_policy"]').is(':checked')
+
+    if (!accomId) {
+      showDetailsError($detailsForm, 'Accommodation is missing. Please reload the page.')
+      return
+    }
+    if (!checkIn || !checkOut) {
+      showDetailsError($detailsForm, 'Please select check-in and check-out dates.')
+      return
+    }
+    if (!firstName || !lastName) {
+      showDetailsError($detailsForm, 'Please enter your first and last name.')
+      return
+    }
+    if (!email) {
+      showDetailsError($detailsForm, 'Please enter your email address.')
+      return
+    }
+    if (!termsAccepted || !privacyAccepted) {
+      showPoliciesError($detailsForm, 'Please accept the terms and privacy policy.')
+      return
+    }
+
+    var feeIds = ($detailsForm.find('.gs-hb-selected-fees').val() || '').trim()
+    var $summary = $detailsForm.find('.gs-hb-summary-wrapper').first()
+    var baseFeeIds = $summary.length ? String($summary.attr('data-base-fee-ids') || '') : ''
+    var toggleFeeIds = $summary.length ? String($summary.attr('data-toggle-fee-ids') || '') : ''
+
+    var payload = {
+      action: 'goldenstay_hb_book_now',
+      nonce: gsHbBooking.nonce,
+      accom_id: accomId,
+      check_in: checkIn,
+      check_out: checkOut,
+      adults: adults,
+      children: children,
+      fee_ids: feeIds,
+      base_fee_ids: baseFeeIds,
+      toggle_fee_ids: toggleFeeIds,
+
+      first_name: firstName,
+      last_name: lastName,
+      email: email,
+      phone: phone,
+      address_1: address1,
+      address_2: address2,
+      city: city,
+      state: state,
+      country_iso: countryIso,
+      zip_code: zipCode,
+      terms: termsAccepted ? 1 : 0,
+      privacy: privacyAccepted ? 1 : 0,
+    }
+
+    debugLog('[GS HB] book now payload:', payload)
+
+    setFormLoading($detailsForm, true)
+    $wrapper.data('gsHbBookNowInProgress', true)
+
+    $.ajax({
+      url: gsHbBooking.ajaxUrl,
+      type: 'POST',
+      dataType: 'json',
+      data: payload,
+      success: function (response) {
+        debugLog('[GS HB] book now response:', response)
+        $wrapper.data('gsHbBookNowInProgress', false)
+        setFormLoading($detailsForm, false)
+
+        if (response && response.success && response.data && response.data.payment_url) {
+          window.location.href = String(response.data.payment_url)
+          return
+        }
+
+        var message =
+          (response && response.data && response.data.message) ||
+          'Booking failed. Please try again.'
+        showDetailsError($detailsForm, message)
+      },
+      error: function (xhr, status, error) {
+        debugLog('[GS HB] book now ajax error:', { status: status, error: error, xhr: xhr })
+        $wrapper.data('gsHbBookNowInProgress', false)
+        setFormLoading($detailsForm, false)
+        showDetailsError($detailsForm, 'Connection error. Please try again.')
+      },
+    })
+  }
+
   function handleSearch($form) {
     var $wrapper = $form.closest('.hbook-wrapper')
     var searchOnly = String($form.data('search-only') || '').toLowerCase()
@@ -566,6 +743,8 @@
       e.preventDefault()
       e.stopPropagation()
       if (e.stopImmediatePropagation) e.stopImmediatePropagation()
+      var $wrapper = $(this).closest('.hbook-wrapper[data-gs-hb-compat="1"]')
+      handleBookNow($wrapper)
       return false
     },
   )
@@ -677,6 +856,7 @@
             event.preventDefault()
             event.stopPropagation()
             if (event.stopImmediatePropagation) event.stopImmediatePropagation()
+            handleBookNow($(wrapper))
           }
         } catch (e) {
           debugLog('[GS HB] click capture error:', e)

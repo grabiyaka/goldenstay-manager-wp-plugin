@@ -66,6 +66,10 @@ class GoldenStay_HBook_Compat {
         // Public AJAX: recalc prices when user selects additional fees on the website.
         add_action( 'wp_ajax_nopriv_goldenstay_hb_recalc_prices', array( $this, 'ajax_hb_recalc_prices' ) );
         add_action( 'wp_ajax_goldenstay_hb_recalc_prices', array( $this, 'ajax_hb_recalc_prices' ) );
+
+        // Public AJAX: create reservation + redirect to Mollie payment link (Book now).
+        add_action( 'wp_ajax_nopriv_goldenstay_hb_book_now', array( $this, 'ajax_hb_book_now' ) );
+        add_action( 'wp_ajax_goldenstay_hb_book_now', array( $this, 'ajax_hb_book_now' ) );
     }
 
     public function shortcode_not_implemented() {
@@ -370,6 +374,269 @@ class GoldenStay_HBook_Compat {
             array(
                 'available' => ! empty( $result['available'] ),
                 'mark_up' => isset( $result['mark_up'] ) ? $result['mark_up'] : '',
+            )
+        );
+    }
+
+    public function ajax_hb_book_now() {
+        check_ajax_referer( 'goldenstay_frontend_nonce', 'nonce' );
+
+        $accom_id = isset( $_POST['accom_id'] ) ? intval( $_POST['accom_id'] ) : 0;
+        $check_in_raw = isset( $_POST['check_in'] ) ? sanitize_text_field( $_POST['check_in'] ) : '';
+        $check_out_raw = isset( $_POST['check_out'] ) ? sanitize_text_field( $_POST['check_out'] ) : '';
+        $adults = isset( $_POST['adults'] ) ? intval( $_POST['adults'] ) : 1;
+        $children = isset( $_POST['children'] ) ? intval( $_POST['children'] ) : 0;
+
+        $first_name = isset( $_POST['first_name'] ) ? sanitize_text_field( $_POST['first_name'] ) : '';
+        $last_name = isset( $_POST['last_name'] ) ? sanitize_text_field( $_POST['last_name'] ) : '';
+        $email = isset( $_POST['email'] ) ? sanitize_email( $_POST['email'] ) : '';
+        $phone = isset( $_POST['phone'] ) ? sanitize_text_field( $_POST['phone'] ) : '';
+        $address_1 = isset( $_POST['address_1'] ) ? sanitize_text_field( $_POST['address_1'] ) : '';
+        $address_2 = isset( $_POST['address_2'] ) ? sanitize_text_field( $_POST['address_2'] ) : '';
+        $city = isset( $_POST['city'] ) ? sanitize_text_field( $_POST['city'] ) : '';
+        $country_iso = isset( $_POST['country_iso'] ) ? sanitize_text_field( $_POST['country_iso'] ) : '';
+        $zip_code = isset( $_POST['zip_code'] ) ? sanitize_text_field( $_POST['zip_code'] ) : '';
+        $terms = isset( $_POST['terms'] ) ? (bool) intval( $_POST['terms'] ) : false;
+        $privacy = isset( $_POST['privacy'] ) ? (bool) intval( $_POST['privacy'] ) : false;
+
+        $fee_ids_raw = isset( $_POST['fee_ids'] ) ? sanitize_text_field( $_POST['fee_ids'] ) : '';
+        $base_fee_ids_raw = isset( $_POST['base_fee_ids'] ) ? sanitize_text_field( $_POST['base_fee_ids'] ) : '';
+        $toggle_fee_ids_raw = isset( $_POST['toggle_fee_ids'] ) ? sanitize_text_field( $_POST['toggle_fee_ids'] ) : '';
+
+        if ( ! $accom_id ) {
+            wp_send_json_error( array( 'message' => 'Accommodation ID is required' ) );
+        }
+
+        if ( $first_name === '' || $last_name === '' ) {
+            wp_send_json_error( array( 'message' => 'Please enter your first and last name' ) );
+        }
+
+        if ( $email === '' || ! is_email( $email ) ) {
+            wp_send_json_error( array( 'message' => 'Please enter a valid email address' ) );
+        }
+
+        if ( ! $terms || ! $privacy ) {
+            wp_send_json_error( array( 'message' => 'Please accept the terms and privacy policy' ) );
+        }
+
+        $token = GoldenStay_Manager::get_api_token();
+        if ( ! $token ) {
+            wp_send_json_error( array( 'message' => 'GoldenStay API token is missing. Please login in WP admin.' ) );
+        }
+
+        $property_id = GoldenStay_Accommodation_Mapping::get_property_id_for_accom( $accom_id );
+        if ( ! $property_id ) {
+            wp_send_json_error( array( 'message' => 'Property mapping is missing for this accommodation' ) );
+        }
+
+        $date_from = $this->normalize_date_ymd( $check_in_raw );
+        $date_to = $this->normalize_date_ymd( $check_out_raw );
+        if ( ! $date_from || ! $date_to ) {
+            wp_send_json_error( array( 'message' => 'Please select check-in and check-out dates' ) );
+        }
+        if ( strtotime( $date_to ) <= strtotime( $date_from ) ) {
+            wp_send_json_error( array( 'message' => 'Check-out date must be after check-in date' ) );
+        }
+
+        // Re-check availability right before creating reservation.
+        if ( ! $this->is_available_for_period( $property_id, $date_from, $date_to ) ) {
+            wp_send_json_error( array( 'message' => 'Selected dates are no longer available. Please choose other dates.' ) );
+        }
+
+        $adults = max( 0, intval( $adults ) );
+        $children = max( 0, intval( $children ) );
+        $guests = max( 1, $adults + $children );
+
+        $parse_ids = function ( $raw ) {
+            $ids = array();
+            $raw = trim( (string) $raw );
+            if ( $raw === '' ) {
+                return $ids;
+            }
+            $parts = preg_split( '/[,\s]+/', $raw );
+            if ( is_array( $parts ) ) {
+                foreach ( $parts as $p ) {
+                    $id = intval( trim( (string) $p ) );
+                    if ( $id > 0 ) {
+                        $ids[] = $id;
+                    }
+                }
+            }
+            return array_values( array_unique( array_filter( $ids ) ) );
+        };
+
+        // Selected fee IDs from frontend
+        $fee_ids = $parse_ids( $fee_ids_raw );
+        // Fee IDs that were included in the Step 1 total (base fees)
+        $base_fee_ids = $parse_ids( $base_fee_ids_raw );
+        // Fee IDs that are toggleable in the website fees UI (checkbox list)
+        $toggle_fee_ids = $parse_ids( $toggle_fee_ids_raw );
+
+        $fees_by_id = $this->get_property_additional_fees_by_id( $property_id );
+        $fee_keys = array_map( 'intval', array_keys( $fees_by_id ) );
+        $fee_key_map = array_fill_keys( $fee_keys, true );
+
+        $filter_existing = function ( $ids ) use ( $fee_key_map ) {
+            $out = array();
+            foreach ( $ids as $id ) {
+                $id = intval( $id );
+                if ( $id > 0 && isset( $fee_key_map[ $id ] ) ) {
+                    $out[] = $id;
+                }
+            }
+            return array_values( array_unique( $out ) );
+        };
+
+        $fee_ids = $filter_existing( $fee_ids );
+        $base_fee_ids = $filter_existing( $base_fee_ids );
+        $toggle_fee_ids = $filter_existing( $toggle_fee_ids );
+
+        $selected_optional_fee_ids = array();
+        $all_fee_ids = array();
+
+        // Preferred mode: base fees are provided by frontend (keeps totals stable).
+        if ( count( $base_fee_ids ) ) {
+            $toggle_map = array_fill_keys( $toggle_fee_ids, true );
+            $fixed_fee_ids = array();
+            foreach ( $base_fee_ids as $id ) {
+                if ( isset( $toggle_map[ $id ] ) ) {
+                    continue;
+                }
+                $fixed_fee_ids[] = $id;
+            }
+
+            $toggle_allowed_map = array_fill_keys( $toggle_fee_ids, true );
+            foreach ( $fee_ids as $id ) {
+                if ( isset( $toggle_allowed_map[ $id ] ) ) {
+                    $selected_optional_fee_ids[] = $id;
+                }
+            }
+
+            $all_fee_ids = array_values(
+                array_unique(
+                    array_filter(
+                        array_merge( $fixed_fee_ids, $selected_optional_fee_ids )
+                    )
+                )
+            );
+        } else {
+            // Fallback: keep mandatory fees always included.
+            $mandatory_fee_ids = array();
+            foreach ( $fees_by_id as $fid => $fee ) {
+                if ( ! is_array( $fee ) ) {
+                    continue;
+                }
+                $is_optional = ! empty( $fee['optional'] );
+                if ( ! $is_optional ) {
+                    $mandatory_fee_ids[] = intval( $fid );
+                }
+            }
+
+            foreach ( $fee_ids as $fid ) {
+                if ( ! isset( $fees_by_id[ $fid ] ) || ! is_array( $fees_by_id[ $fid ] ) ) {
+                    continue;
+                }
+                if ( empty( $fees_by_id[ $fid ]['optional'] ) ) {
+                    continue;
+                }
+                $selected_optional_fee_ids[] = intval( $fid );
+            }
+
+            $all_fee_ids = array_values(
+                array_unique(
+                    array_filter(
+                        array_merge( $mandatory_fee_ids, $selected_optional_fee_ids )
+                    )
+                )
+            );
+        }
+
+        // Build PMS payload selected_fees (include fixed + selected optional)
+        $selected_fees = array();
+        $order = 0;
+        foreach ( $all_fee_ids as $fid ) {
+            if ( ! isset( $fees_by_id[ $fid ] ) || ! is_array( $fees_by_id[ $fid ] ) ) {
+                continue;
+            }
+            $fee = $fees_by_id[ $fid ];
+            $selected_fees[] = array(
+                'id' => intval( $fid ),
+                'value' => array_key_exists( 'value', $fee ) ? floatval( $fee['value'] ) : null,
+                'kind_id' => array_key_exists( 'kind_id', $fee ) ? intval( $fee['kind_id'] ) : null,
+                'fee_tax_type' => array_key_exists( 'fee_tax_type', $fee ) ? intval( $fee['fee_tax_type'] ) : null,
+                'discriminator_id' => array_key_exists( 'discriminator_id', $fee ) ? intval( $fee['discriminator_id'] ) : null,
+                'collect_time' => array_key_exists( 'collect_time', $fee ) ? intval( $fee['collect_time'] ) : null,
+                'optional' => array_key_exists( 'optional', $fee ) ? (bool) $fee['optional'] : null,
+                'website_optional' => array_key_exists( 'website_optional', $fee ) ? (bool) $fee['website_optional'] : null,
+                'enable_by_default' => array_key_exists( 'enable_by_default', $fee ) ? (bool) $fee['enable_by_default'] : null,
+                'name' => $this->get_fee_display_name_nl( $fee ),
+                'order' => $order,
+            );
+            $order++;
+        }
+
+        $customer_address = trim( $address_1 . ( $address_2 !== '' ? ( ' ' . $address_2 ) : '' ) );
+
+        $payload = array(
+            'property_id' => intval( $property_id ),
+            'date_from' => $date_from,
+            'date_to' => $date_to,
+            'number_of_guests' => intval( $guests ),
+            'number_of_adults' => intval( $adults ),
+            'number_of_children' => intval( $children ),
+            'units' => 1,
+            'creator' => 'website',
+            'notify' => false,
+            'channel_commission' => null,
+
+            'customer_name' => $first_name,
+            'customer_surname' => $last_name,
+            'customer_email' => $email,
+            'customer_phone' => $phone !== '' ? $phone : null,
+            'customer_address' => $customer_address !== '' ? $customer_address : null,
+            'customer_city' => $city !== '' ? $city : null,
+            'customer_zip_code' => $zip_code !== '' ? $zip_code : null,
+            'customer_country_code' => $country_iso !== '' ? $country_iso : null,
+
+            // PMS requires these keys in schema; they can be null.
+            'customer_country_id' => null,
+            'customer_language_id' => 11, // 11 = nl (used elsewhere in PMS)
+
+            // No quotes: create a regular reservation
+            'is_quote' => false,
+
+            'selected_fees' => $selected_fees,
+        );
+
+        $response = $this->api_post_json( 'reservation', $payload, true );
+        if ( is_wp_error( $response ) ) {
+            wp_send_json_error( array( 'message' => 'API connection error: ' . $response->get_error_message() ) );
+        }
+
+        $status_code = wp_remote_retrieve_response_code( $response );
+        $body = json_decode( wp_remote_retrieve_body( $response ), true );
+
+        if ( $status_code !== 200 && $status_code !== 201 ) {
+            $error_message = is_array( $body )
+                ? ( $body['message'] ?? $body['error'] ?? 'Booking failed' )
+                : 'Booking failed';
+            wp_send_json_error( array( 'message' => $error_message ) );
+        }
+
+        $reservation_id = ( is_array( $body ) && isset( $body['id'] ) ) ? intval( $body['id'] ) : 0;
+        if ( ! $reservation_id ) {
+            wp_send_json_error( array( 'message' => 'Booking succeeded, but reservation id is missing' ) );
+        }
+
+        $api_url = GoldenStay_Manager::get_api_url();
+        $payment_url = trailingslashit( $api_url ) .
+            'payments/mollie/payment?reservation_id=' . intval( $reservation_id ) .
+            '&action=schedule';
+
+        wp_send_json_success(
+            array(
+                'reservation_id' => $reservation_id,
+                'payment_url' => $payment_url,
             )
         );
     }
