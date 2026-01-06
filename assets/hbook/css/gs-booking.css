@@ -3,6 +3,12 @@
  * Keep selectors scoped under `.hbook-wrapper` to avoid conflicts.
  */
 
+.hbook-wrapper[data-gs-hb-compat="1"] {
+  /* Match original (Adomus) booking accent on production: green buttons */
+  --gs-hb-btn: #427a5b;
+  --gs-hb-btn-hover: #2f5b43;
+}
+
 .hbook-wrapper .gs-hb-search-results {
   margin: 0;
   padding: 0;
@@ -15,6 +21,41 @@
 .hbook-wrapper .gs-hb-search-results .gs-hb-loading {
   color: dimgray;
   padding: 10px 0;
+}
+
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-button-wrapper input[type="submit"],
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-button-wrapper input[type="button"] {
+  background: var(--gs-hb-btn);
+}
+
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-button-wrapper input[type="submit"]:hover,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-button-wrapper input[type="submit"]:focus,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-button-wrapper input[type="button"]:hover,
+.hbook-wrapper[data-gs-hb-compat="1"] .hb-button-wrapper input[type="button"]:focus {
+  background: var(--gs-hb-btn-hover);
+}
+
+/* Animate result card / price appearance (subtle) */
+.hbook-wrapper[data-gs-hb-compat="1"] .gs-hb-search-results .hb-accom-step-wrapper {
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 180ms ease, transform 220ms ease;
+}
+
+.hbook-wrapper[data-gs-hb-compat="1"] .gs-hb-search-results.gs-hb-results-ready .hb-accom-step-wrapper {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hbook-wrapper[data-gs-hb-compat="1"] .gs-hb-search-results .hb-accom-price-total {
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 180ms ease 60ms, transform 220ms ease 60ms;
+}
+
+.hbook-wrapper[data-gs-hb-compat="1"] .gs-hb-search-results.gs-hb-results-ready .hb-accom-price-total {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .hbook-wrapper .gs-hb-fees-step .gs-hb-fee-price {

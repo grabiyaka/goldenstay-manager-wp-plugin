@@ -202,6 +202,106 @@
 	transform: rotate(-40deg);
 }
 
+/* -------------------------------------------------------------------------- */
+/* Calendar colors (match original HBook defaults + Bosvillarijs green accent) */
+/* -------------------------------------------------------------------------- */
+
+.hb-datepick-popup-wrapper,
+.hb-datepick-wrapper {
+	background: #fff;
+}
+
+.hb-day-available,
+.hb-day-taken-start,
+.hb-day-taken-end,
+.hb-avail-caption-available {
+	background: #fff;
+}
+
+.hb-dp-day-past,
+.hb-dp-day-closed,
+.hb-dp-day-not-selectable,
+.hb-dp-day-past.hb-day-taken-start:before,
+.hb-dp-day-past.hb-day-taken-end:before,
+.hb-dp-day-past.hb-day-fully-taken,
+.hb-dp-day-closed.hb-day-taken-start:before,
+.hb-dp-day-closed.hb-day-taken-end:before,
+.hb-dp-day-closed.hb-day-fully-taken {
+	background: #dddddd;
+}
+
+.hb-dp-day-past,
+.hb-dp-day-closed,
+.hb-dp-day-not-selectable,
+.hb-dp-day-no-check-in,
+.hb-dp-day-past a,
+.hb-dp-day-closed a,
+.hb-dp-day-not-selectable a,
+.hb-dp-day-no-check-in a,
+.hb-dp-day-past span,
+.hb-dp-day-closed span,
+.hb-dp-day-not-selectable span,
+.hb-dp-day-no-check-in span {
+	color: #888888;
+}
+
+.hb-dp-day-check-in,
+.hb-dp-day-check-out {
+	background: #ccf7cc;
+}
+
+.hb-day-taken-start:before,
+.hb-day-taken-end:before,
+.hb-day-fully-taken,
+.hb-avail-caption-occupied {
+	background: #f7d7dc;
+}
+
+.hb-dp-cmd-wrapper a,
+.hb-dp-cmd-close,
+.hb-people-popup-wrapper-close {
+	background: #333333;
+}
+
+.hb-dp-cmd-wrapper a:hover,
+.hb-dp-cmd-close:hover,
+.hb-people-popup-wrapper-close:hover {
+	background: #6f6f6f;
+}
+
+.hb-dp-cmd-wrapper a.hb-dp-disabled {
+	background: #aaaaaa;
+}
+
+.hb-dp-cmd-wrapper a,
+.hb-dp-cmd-wrapper a:hover,
+a.hb-dp-cmd-close,
+a.hb-dp-cmd-close:hover,
+a.hb-people-popup-wrapper-close,
+a.hb-people-popup-wrapper-close:hover {
+	color: #ffffff;
+}
+
+.hb-dp-multi .hb-dp-month:not(.first),
+.hb-dp-month-row + .hb-dp-month-row,
+.hb-datepick-legend {
+	border-color: #cccccc;
+}
+
+/* Green accent for headers + available days */
+.hb-datepick-selecting-legend,
+.hb-dp-month-header,
+.hb-dp-week-header,
+.hb-dp-week-header div,
+.hb-dp-day a.hb-dp-day-link {
+	color: #427a5b;
+}
+
+/* Calendar icon inside inputs */
+.hb-datepick-check-in-out-trigger {
+	color: #427a5b;
+}
+
 .hb-availability-calendar-centered {
 	margin: 0 auto;
 }

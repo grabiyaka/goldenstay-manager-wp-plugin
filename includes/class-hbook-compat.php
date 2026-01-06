@@ -235,22 +235,24 @@ class GoldenStay_HBook_Compat {
 
         $is_rtl = is_rtl() ? 'true' : 'false';
 
+        // NOTE: These strings are used by hb-datepick.js for legend/title + tooltips.
+        // We hardcode Dutch to match the original Bosvillarijs HBook/Adomus UX.
         $hb_text = array(
-            'legend_select_check_in' => '',
-            'legend_select_check_out' => '',
-            'legend_past' => 'Past',
-            'legend_closed' => 'Closed',
-            'legend_occupied' => 'Occupied',
-            'legend_check_out_only' => 'Check-out only',
-            'legend_check_in_only' => 'Check-in only',
-            'legend_available' => 'Available',
-            'legend_check_in' => 'Check-in',
-            'legend_check_out' => 'Check-out',
-            'legend_no_check_in' => 'No check-in',
-            'legend_no_check_out' => 'No check-out',
-            'legend_before_check_in' => 'Before check-in',
-            'legend_no_check_out_min_stay' => 'No check-out (min %nb_nights nights)',
-            'legend_no_check_out_max_stay' => 'No check-out (max %nb_nights nights)',
+            'legend_select_check_in' => 'Kies een aankomstdatum',
+            'legend_select_check_out' => 'Kies een vertrekdatum',
+            'legend_past' => 'Verleden',
+            'legend_closed' => 'Gesloten',
+            'legend_occupied' => 'Bezet',
+            'legend_check_out_only' => 'Alleen vertrek',
+            'legend_check_in_only' => 'Alleen aankomst',
+            'legend_available' => 'Beschikbaar',
+            'legend_check_in' => 'Aankomst',
+            'legend_check_out' => 'Vertrek',
+            'legend_no_check_in' => 'Geen aankomst',
+            'legend_no_check_out' => 'Geen vertrek',
+            'legend_before_check_in' => 'Voor aankomst',
+            'legend_no_check_out_min_stay' => 'Geen vertrek (min %nb_nights nachten)',
+            'legend_no_check_out_max_stay' => 'Geen vertrek (max %nb_nights nachten)',
         );
 
         $booking_rules = array(

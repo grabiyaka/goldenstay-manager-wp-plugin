@@ -6,6 +6,12 @@
 (function ($) {
   'use strict'
 
+  // HBook originally toggles vertical/horizontal form classes in booking-form.js.
+  // We don't load that file in the compat mode, so we re-implement the minimal part here
+  // to keep Adomus theme booking form layout identical to the original.
+  var HB_HORIZONTAL_FORM_MIN_WIDTH = 500
+  var HB_DETAILS_FORM_STACK_WIDTH = 400
+
   function debugLog() {
     try {
       if (!window.console || !console.log) return
@@ -17,6 +23,52 @@
 
   function setFormLoading($form, isLoading) {
     $form.find('input[type="submit"], button[type="submit"]').prop('disabled', !!isLoading)
+  }
+
+  function schedule(fn, delay) {
+    var timer = null
+    return function () {
+      var scope = this
+      var args = arguments
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(function () {
+        timer = null
+        fn.apply(scope, args)
+      }, delay)
+    }
+  }
+
+  function resizeForms() {
+    try {
+      $('.hbook-wrapper[data-gs-hb-compat="1"] .hb-booking-search-form').each(function () {
+        var $form = $(this)
+        var formId = ($form.attr('id') || '').toString()
+        var bodyClass = formId ? 'hb-' + formId + '-is-vertical' : ''
+        var w = $form.width() || 0
+
+        if (w < HB_HORIZONTAL_FORM_MIN_WIDTH) {
+          $form.addClass('hb-vertical-search-form')
+          $form.removeClass('hb-horizontal-search-form')
+          if (bodyClass) $('body').addClass(bodyClass)
+        } else {
+          $form.removeClass('hb-vertical-search-form')
+          $form.addClass('hb-horizontal-search-form')
+          if (bodyClass) $('body').removeClass(bodyClass)
+        }
+
+        if (w < 400) $form.addClass('hb-narrow-search-form')
+        else $form.removeClass('hb-narrow-search-form')
+      })
+
+      $('.hbook-wrapper[data-gs-hb-compat="1"] .hb-booking-details-form').each(function () {
+        var $form = $(this)
+        var w = $form.width() || 0
+        if (w < HB_DETAILS_FORM_STACK_WIDTH) $form.addClass('hb-details-form-stacked')
+        else $form.removeClass('hb-details-form-stacked')
+      })
+    } catch (e) {
+      debugLog('[GS HB] resizeForms error:', e)
+    }
   }
 
   function showFormError($form, message) {
@@ -262,6 +314,7 @@
 
     var $results = $wrapper.find('.gs-hb-search-results')
     if ($results.length) {
+      $results.removeClass('gs-hb-results-ready')
       $results.html('<div class="gs-hb-loading">Zoeken ...</div>')
     }
 
@@ -282,6 +335,14 @@
             $results.html(response.data.mark_up || '')
             // HBook CSS hides .hb-accom-list by default; show it for our injected result.
             $results.find('.hb-accom-list').show()
+          }
+
+          // The injected markup contains new step wrappers/forms; ensure responsive classes are correct.
+          resizeForms()
+          if ($results.length) {
+            setTimeout(function () {
+              $results.addClass('gs-hb-results-ready')
+            }, 10)
           }
 
           // Mimic HBook UX: collapse form to summary + show "change search" button
@@ -769,7 +830,10 @@
       if ($fields.length) $fields.show()
 
       var $results = $wrapper.find('.gs-hb-search-results')
-      if ($results.length) $results.empty()
+      if ($results.length) {
+        $results.removeClass('gs-hb-results-ready')
+        $results.empty()
+      }
 
       showFormError($form, '')
 
@@ -790,6 +854,10 @@
         showFormError($form, '')
       }
     })
+
+    // Restore original HBook responsive behaviour (vertical form in narrow containers).
+    resizeForms()
+    $(window).on('resize', schedule(resizeForms, 150))
   })
 
   // Capture-phase click interceptor:
