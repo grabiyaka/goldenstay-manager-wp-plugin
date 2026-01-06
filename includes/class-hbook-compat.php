@@ -157,12 +157,25 @@ class GoldenStay_HBook_Compat {
         wp_enqueue_script( 'gs-hb-datepick' );
 
         // Minimal booking form behaviour (AJAX search + price breakdown toggle).
-        wp_enqueue_style(
-            'gs-hb-booking',
-            GOLDENSTAY_PLUGIN_URL . 'assets/hbook/css/gs-booking.css',
-            array( 'gs-hb-front-end', 'gs-hb-datepick' ),
-            GOLDENSTAY_VERSION
-        );
+        // Allow overriding via WP Admin (GoldenStay → Shortcode Styles)
+        $custom_css = get_option( 'goldenstay_shortcode_css_hb_booking' );
+        if ( is_string( $custom_css ) && trim( $custom_css ) !== '' ) {
+            wp_register_style(
+                'gs-hb-booking',
+                false,
+                array( 'gs-hb-front-end', 'gs-hb-datepick' ),
+                GOLDENSTAY_VERSION
+            );
+            wp_enqueue_style( 'gs-hb-booking' );
+            wp_add_inline_style( 'gs-hb-booking', $custom_css );
+        } else {
+            wp_enqueue_style(
+                'gs-hb-booking',
+                GOLDENSTAY_PLUGIN_URL . 'assets/hbook/css/gs-booking.css',
+                array( 'gs-hb-front-end', 'gs-hb-datepick' ),
+                GOLDENSTAY_VERSION
+            );
+        }
         wp_enqueue_script(
             'gs-hb-booking',
             GOLDENSTAY_PLUGIN_URL . 'assets/hbook/js/gs-booking.js',
@@ -188,12 +201,25 @@ class GoldenStay_HBook_Compat {
             return;
         }
 
-        wp_enqueue_style(
-            'gs-hb-availability',
-            GOLDENSTAY_PLUGIN_URL . 'assets/hbook/css/gs-availability.css',
-            array( 'gs-hb-front-end', 'gs-hb-datepick' ),
-            GOLDENSTAY_VERSION
-        );
+        // Allow overriding via WP Admin (GoldenStay → Shortcode Styles)
+        $custom_css = get_option( 'goldenstay_shortcode_css_hb_availability' );
+        if ( is_string( $custom_css ) && trim( $custom_css ) !== '' ) {
+            wp_register_style(
+                'gs-hb-availability',
+                false,
+                array( 'gs-hb-front-end', 'gs-hb-datepick' ),
+                GOLDENSTAY_VERSION
+            );
+            wp_enqueue_style( 'gs-hb-availability' );
+            wp_add_inline_style( 'gs-hb-availability', $custom_css );
+        } else {
+            wp_enqueue_style(
+                'gs-hb-availability',
+                GOLDENSTAY_PLUGIN_URL . 'assets/hbook/css/gs-availability.css',
+                array( 'gs-hb-front-end', 'gs-hb-datepick' ),
+                GOLDENSTAY_VERSION
+            );
+        }
         wp_enqueue_script(
             'gs-hb-availability',
             GOLDENSTAY_PLUGIN_URL . 'assets/hbook/js/gs-availability.js',

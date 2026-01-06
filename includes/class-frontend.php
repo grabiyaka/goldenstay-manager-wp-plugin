@@ -8,6 +8,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class GoldenStay_Frontend {
+
+    const OPT_FRONTEND_CSS = 'goldenstay_shortcode_css_frontend';
     
     /**
      * Properties list shortcode
@@ -55,13 +57,21 @@ class GoldenStay_Frontend {
         if ( $assets_enqueued ) {
             return;
         }
-        
-        wp_enqueue_style( 
-            'goldenstay-frontend-css', 
-            GOLDENSTAY_PLUGIN_URL . 'assets/frontend-style.css',
-            array(),
-            GOLDENSTAY_VERSION
-        );
+
+        // Allow overriding shortcode CSS via WP Admin (GoldenStay → Shortcode Styles)
+        $custom_css = get_option( self::OPT_FRONTEND_CSS );
+        if ( is_string( $custom_css ) && trim( $custom_css ) !== '' ) {
+            wp_register_style( 'goldenstay-frontend-css', false, array(), GOLDENSTAY_VERSION );
+            wp_enqueue_style( 'goldenstay-frontend-css' );
+            wp_add_inline_style( 'goldenstay-frontend-css', $custom_css );
+        } else {
+            wp_enqueue_style(
+                'goldenstay-frontend-css',
+                GOLDENSTAY_PLUGIN_URL . 'assets/frontend-style.css',
+                array(),
+                GOLDENSTAY_VERSION
+            );
+        }
         
         wp_enqueue_script( 
             'goldenstay-frontend-js', 

@@ -1,0 +1,156 @@
+/**
+ * GoldenStay - CodeMirror dark theme (used on GoldenStay → Shortcode Styles page)
+ *
+ * We ship our own theme because WordPress bundles CodeMirror without extra theme files.
+ */
+
+/* Fallback for plain textareas (when user disabled WP syntax highlighting) */
+.goldenstay-shortcode-styles-page textarea.code {
+  background: #0f111a;
+  color: #e6e6e6;
+  border-color: #2a2e39;
+}
+
+.goldenstay-shortcode-styles-page textarea.code:focus {
+  border-color: #3a4252;
+  box-shadow: 0 0 0 1px #3a4252;
+}
+
+/* CodeMirror theme */
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark.CodeMirror {
+  background: #0f111a;
+  color: #e6e6e6;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark .CodeMirror-gutters {
+  background: #0f111a;
+  border-right: 1px solid #2a2e39;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark .CodeMirror-linenumber {
+  color: #6b7280;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark .CodeMirror-cursor {
+  border-left: 1px solid #f8f8f2;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark div.CodeMirror-selected {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark.CodeMirror-focused div.CodeMirror-selected {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark .CodeMirror-line::selection,
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark .CodeMirror-line > span::selection,
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark .CodeMirror-line > span > span::selection {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark .CodeMirror-line::-moz-selection,
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark .CodeMirror-line > span::-moz-selection,
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark .CodeMirror-line > span > span::-moz-selection {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark .CodeMirror-activeline-background {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-comment {
+  color: #6a9955;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-string,
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-string-2 {
+  color: #ce9178;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-number {
+  color: #b5cea8;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-keyword {
+  color: #569cd6;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-property {
+  color: #9cdcfe;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-atom {
+  color: #dcdcaa;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-def {
+  color: #4ec9b0;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-variable {
+  color: #9cdcfe;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-variable-2 {
+  color: #4ec9b0;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-variable-3,
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-type {
+  color: #c586c0;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-meta,
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-qualifier {
+  color: #d4d4d4;
+  opacity: 0.85;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-builtin {
+  color: #dcdcaa;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-bracket {
+  color: #d4d4d4;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-tag {
+  color: #569cd6;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-attribute {
+  color: #9cdcfe;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-hr {
+  color: #808080;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-link {
+  color: #4fc1ff;
+  text-decoration: underline;
+}
+
+/* WP's bundled CodeMirror can mark modern CSS properties as "error" (e.g. gap).
+   We still keep invalid characters red below, but soften cm-error to avoid false alarms. */
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-error {
+  color: #9cdcfe;
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.cm-invalidchar {
+  color: #f44747;
+  background: rgba(244, 71, 71, 0.12);
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.CodeMirror-matchingbracket {
+  color: #3ddc97 !important;
+  background: rgba(61, 220, 151, 0.12);
+}
+
+.goldenstay-shortcode-styles-page .cm-s-goldenstay-dark span.CodeMirror-nonmatchingbracket {
+  color: #f44747 !important;
+  background: rgba(244, 71, 71, 0.12);
+}
+
+
