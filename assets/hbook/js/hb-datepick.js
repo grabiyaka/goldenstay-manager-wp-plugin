@@ -80,6 +80,9 @@ jQuery(document).ready(function($) {
 	var is_hb_dp_mobile = false,
 		double_datepick_width,
 		booking_rules,
+		hb_dp_current_accom_booking_window = '0',
+		hb_dp_pending_min_stay_by_day = {},
+		hb_dp_min_stay_fetch_state = {},
 		current_date_shown = new Date();
 
 	if ( /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test( navigator.userAgent ) ) {
@@ -349,6 +352,11 @@ jQuery(document).ready(function($) {
 		} else if ( ! selecting_check_in && check_out_date ) {
 			current_date_shown = new Date( check_out_date.getTime() );
 		}
+
+		// PMS-backed min-stay fallback: if it wasn't prefetched, fetch it on-demand.
+		if ( current_check_in_date ) {
+			hb_dp_fetch_and_cache_min_stay( $inputs_wrapper, current_check_in_date );
+		}
 		show_current_month();
 		$( '.hb-datepick-popup-wrapper' ).show().css( 'opacity', 0 );
 		resize_datepick();
@@ -379,6 +387,7 @@ jQuery(document).ready(function($) {
 			current_accom_id = $hbook_wrapper.data( 'page-accom-id' );
 		}
 		current_accom_booking_window = window[ 'hb_accom_data_' + current_accom_id ];
+		hb_dp_current_accom_booking_window = current_accom_booking_window;
 
 		if ( hb_booking_form_data.is_admin != 'yes') {
 			if ( current_accom_booking_window != '0' ) {
@@ -426,13 +435,8 @@ jQuery(document).ready(function($) {
 					hb_dp_min_check_out = new Date( current_check_in_date.getTime() );
 					hb_dp_min_check_out.setDate( hb_dp_min_check_out.getDate() + 1 );
 					hb_dp_min_stay_date = new Date( current_check_in_date.getTime() );
-					hb_dp_min_stay_date.setDate( hb_dp_min_stay_date.getDate() + parseInt( booking_rules.minimum_stay ) );
-					hb_dp_current_min_stay = booking_rules.minimum_stay;
-					if ( booking_rules.seasonal_minimum_stay[ chosen_season ] ) {
-						hb_dp_min_stay_date = new Date( current_check_in_date.getTime() );
-						hb_dp_min_stay_date.setDate( hb_dp_min_stay_date.getDate() + parseInt( booking_rules.seasonal_minimum_stay[ chosen_season ] ) );
-						hb_dp_current_min_stay = booking_rules.seasonal_minimum_stay[ chosen_season ];
-					}
+					hb_dp_current_min_stay = hb_dp_get_min_stay_for_check_in( current_check_in_date );
+					hb_dp_min_stay_date.setDate( hb_dp_min_stay_date.getDate() + parseInt( hb_dp_current_min_stay ) );
 					hb_dp_max_stay_date = new Date( current_check_in_date.getTime() );
 					hb_dp_max_stay_date.setDate( hb_dp_max_stay_date.getDate() + parseInt( booking_rules.maximum_stay ) );
 					hb_dp_current_max_stay = booking_rules.maximum_stay;
@@ -591,6 +595,7 @@ jQuery(document).ready(function($) {
 					selecting_check_in = false;
 					$check_in.val( str_date_current_format );
 					current_check_in_date = date;
+					hb_dp_fetch_and_cache_min_stay( $( '.hb-datepick-active-inputs' ), current_check_in_date );
 					show_current_month();
 					if ( current_check_out_date ) {
 						if ( is_valid_check_out_date() ) {
@@ -624,10 +629,176 @@ jQuery(document).ready(function($) {
 		});
 	}
 
+	function hb_dp_get_pms_min_stay_for_check_in( check_in_date ) {
+		if ( ! check_in_date || ! hb_dp_current_accom_booking_window || hb_dp_current_accom_booking_window == '0' ) {
+			return false;
+		}
+
+		var min_stay_by_day = hb_dp_current_accom_booking_window['min_stay_by_day'];
+		var key = hb_date_obj_2_str( check_in_date );
+
+		if ( min_stay_by_day && undefined !== min_stay_by_day[ key ] && min_stay_by_day[ key ] !== null ) {
+			var value = parseInt( min_stay_by_day[ key ], 10 );
+			if ( ! isNaN( value ) && value >= 1 ) {
+				return value;
+			}
+		}
+
+		// Pending fallback while loading (used to immediately block next-day checkout).
+		if ( hb_dp_pending_min_stay_by_day && undefined !== hb_dp_pending_min_stay_by_day[ key ] && hb_dp_pending_min_stay_by_day[ key ] !== null ) {
+			var pending_value = parseInt( hb_dp_pending_min_stay_by_day[ key ], 10 );
+			if ( ! isNaN( pending_value ) && pending_value >= 1 ) {
+				return pending_value;
+			}
+		}
+
+		return false;
+	}
+
+	function hb_dp_get_current_accom_id( $inputs_wrapper ) {
+		var current_accom_id = 0;
+		var $hbook_wrapper = $inputs_wrapper && $inputs_wrapper.length ? $inputs_wrapper.parents( '.hbook-wrapper' ) : $( '.hb-datepick-active-inputs' ).parents( '.hbook-wrapper' );
+		if ( $hbook_wrapper && $hbook_wrapper.length && $hbook_wrapper.data( 'page-accom-id' ) ) {
+			current_accom_id = parseInt( $hbook_wrapper.data( 'page-accom-id' ), 10 );
+		}
+		if ( isNaN( current_accom_id ) || current_accom_id < 1 ) {
+			current_accom_id = 0;
+		}
+		return current_accom_id;
+	}
+
+	function hb_dp_set_min_stay_loading( is_loading ) {
+		var $wrapper = $( '.hb-datepick-popup-wrapper' );
+		if ( ! $wrapper.length ) {
+			return;
+		}
+		var $custom_legend = $wrapper.find( '.hb-datepick-custom-legend' );
+
+		if ( is_loading ) {
+			$wrapper.addClass( 'gs-hb-min-stay-loading' );
+			if ( $custom_legend.length ) {
+				$custom_legend.html( '<span class="gs-hb-min-stay-loading-text">Min. verblijf laden…</span>' );
+			}
+		} else {
+			$wrapper.removeClass( 'gs-hb-min-stay-loading' );
+			if ( $custom_legend.length ) {
+				$custom_legend.html( '' );
+			}
+		}
+	}
+
+	function hb_dp_fetch_and_cache_min_stay( $inputs_wrapper, check_in_date ) {
+		if ( ! check_in_date ) {
+			return;
+		}
+		if ( ! window.gsHbBooking || ! gsHbBooking.ajaxUrl || ! gsHbBooking.nonce ) {
+			return;
+		}
+		if ( ! hb_dp_current_accom_booking_window || hb_dp_current_accom_booking_window == '0' ) {
+			return;
+		}
+
+		var accom_id = hb_dp_get_current_accom_id( $inputs_wrapper );
+		if ( ! accom_id ) {
+			return;
+		}
+
+		var date_key = hb_date_obj_2_str( check_in_date );
+		hb_dp_current_accom_booking_window['min_stay_by_day'] = hb_dp_current_accom_booking_window['min_stay_by_day'] || {};
+
+		// Already cached.
+		if ( undefined !== hb_dp_current_accom_booking_window['min_stay_by_day'][ date_key ] ) {
+			return;
+		}
+
+		// De-duplicate concurrent calls (open popup + select check-in).
+		var state_key = accom_id + '|' + date_key;
+		if ( hb_dp_min_stay_fetch_state[ state_key ] === 'loading' ) {
+			return;
+		}
+		hb_dp_min_stay_fetch_state[ state_key ] = 'loading';
+
+		// Fallback behavior: if min-stay cannot be fetched, keep 2 nights (block next-day checkout).
+		hb_dp_pending_min_stay_by_day[ date_key ] = 2;
+
+		// Apply immediately so the user can't select next-day checkout while we wait.
+		show_current_month();
+		hb_dp_set_min_stay_loading( true );
+
+		$.ajax({
+			url: gsHbBooking.ajaxUrl,
+			type: 'POST',
+			dataType: 'json',
+			data: {
+				action: 'goldenstay_hb_get_min_stay',
+				nonce: gsHbBooking.nonce,
+				accom_id: accom_id,
+				check_in: date_key
+			},
+			success: function( response ) {
+				var value = null;
+				if ( response && response.success && response.data && undefined !== response.data.min_stay && response.data.min_stay !== null ) {
+					value = parseInt( response.data.min_stay, 10 );
+				}
+
+				// If response is empty/invalid -> keep fallback 2 nights.
+				if ( isNaN( value ) || value === null || value < 1 ) {
+					value = 2;
+				}
+
+				hb_dp_current_accom_booking_window['min_stay_by_day'][ date_key ] = value;
+				delete hb_dp_pending_min_stay_by_day[ date_key ];
+
+				// If check-out is already selected and becomes invalid after min-stay is known, clear it.
+				if ( current_check_out_date && ! is_valid_check_out_date() ) {
+					current_check_out_date = null;
+					$inputs_wrapper.find( '.hb-check-out-date' ).val( '' );
+				}
+
+				show_current_month();
+			},
+			error: function() {
+				// Hard fallback on request errors.
+				hb_dp_current_accom_booking_window['min_stay_by_day'][ date_key ] = 2;
+				delete hb_dp_pending_min_stay_by_day[ date_key ];
+				show_current_month();
+			},
+			complete: function() {
+				hb_dp_min_stay_fetch_state[ state_key ] = 'done';
+				hb_dp_set_min_stay_loading( false );
+			}
+		});
+	}
+
+	function hb_dp_get_min_stay_for_check_in( check_in_date ) {
+		var min_stay = parseInt( booking_rules.minimum_stay, 10 );
+		if ( isNaN( min_stay ) || min_stay < 1 ) {
+			min_stay = 1;
+		}
+
+		if ( check_in_date ) {
+			var chosen_season = hb_get_season_id( check_in_date );
+			if ( chosen_season && booking_rules.seasonal_minimum_stay[ chosen_season ] ) {
+				var seasonal_min_stay = parseInt( booking_rules.seasonal_minimum_stay[ chosen_season ], 10 );
+				if ( ! isNaN( seasonal_min_stay ) && seasonal_min_stay > 0 ) {
+					min_stay = seasonal_min_stay;
+				}
+			}
+
+			// GoldenStay PMS override: per-day min_stay from calendar_day (keyed by check-in date).
+			var pms_min_stay = hb_dp_get_pms_min_stay_for_check_in( check_in_date );
+			if ( pms_min_stay ) {
+				min_stay = pms_min_stay;
+			}
+		}
+
+		return min_stay;
+	}
+
 	function is_valid_check_out_date() {
 		var min_check_out_date = new Date( current_check_in_date.getTime() ),
 			max_check_out_date = new Date( current_check_in_date.getTime() );
-		min_check_out_date.setDate( min_check_out_date.getDate() + parseInt( booking_rules.minimum_stay ) );
+		min_check_out_date.setDate( min_check_out_date.getDate() + parseInt( hb_dp_get_min_stay_for_check_in( current_check_in_date ) ) );
 		max_check_out_date.setDate( max_check_out_date.getDate() + parseInt( booking_rules.maximum_stay ) );
 		if (
 			( min_check_out_date.getTime() > current_check_out_date.getTime() ) ||

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: GoldenStay Properties
  * Description: GoldenStay Plugin - Booking system with API integration.
- * Version: 0.0.5
+ * Version: 0.0.9
  * Author: GoldenStay
  */
 
@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Plugin constants
-define( 'GOLDENSTAY_VERSION', '0.0.5' );
+define( 'GOLDENSTAY_VERSION', '0.0.9' );
 define( 'GOLDENSTAY_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'GOLDENSTAY_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 

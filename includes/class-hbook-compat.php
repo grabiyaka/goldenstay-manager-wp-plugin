@@ -21,6 +21,7 @@ class GoldenStay_HBook_Compat {
     private $base_assets_enqueued = false;
     private $availability_assets_enqueued = false;
     private $last_calendar_days_raw = array();
+    private $last_calendar_min_stay_by_day = array();
     private $last_calendar_fetch_debug = null;
     private $last_calendar_fetch_response = null;
     private $last_calendar_days_sample = array();
@@ -62,6 +63,10 @@ class GoldenStay_HBook_Compat {
         // Public AJAX: calculate availability + price breakdown for booking form (replacement for HBook search results).
         add_action( 'wp_ajax_nopriv_goldenstay_hb_calc_prices', array( $this, 'ajax_hb_calc_prices' ) );
         add_action( 'wp_ajax_goldenstay_hb_calc_prices', array( $this, 'ajax_hb_calc_prices' ) );
+
+        // Public AJAX: fetch min-stay for selected check-in date (PMS-backed).
+        add_action( 'wp_ajax_nopriv_goldenstay_hb_get_min_stay', array( $this, 'ajax_hb_get_min_stay' ) );
+        add_action( 'wp_ajax_goldenstay_hb_get_min_stay', array( $this, 'ajax_hb_get_min_stay' ) );
 
         // Public AJAX: recalc prices when user selects additional fees on the website.
         add_action( 'wp_ajax_nopriv_goldenstay_hb_recalc_prices', array( $this, 'ajax_hb_recalc_prices' ) );
@@ -380,6 +385,66 @@ class GoldenStay_HBook_Compat {
         );
     }
 
+    public function ajax_hb_get_min_stay() {
+        check_ajax_referer( 'goldenstay_frontend_nonce', 'nonce' );
+
+        $accom_id = isset( $_POST['accom_id'] ) ? intval( $_POST['accom_id'] ) : 0;
+        $check_in_raw = isset( $_POST['check_in'] ) ? sanitize_text_field( $_POST['check_in'] ) : '';
+
+        if ( ! $accom_id ) {
+            wp_send_json_error( array( 'message' => 'Accommodation ID is required' ) );
+        }
+
+        $token = GoldenStay_Manager::get_api_token();
+        if ( ! $token ) {
+            wp_send_json_error( array( 'message' => 'GoldenStay API token is missing. Please login in WP admin.' ) );
+        }
+
+        $property_id = GoldenStay_Accommodation_Mapping::get_property_id_for_accom( $accom_id );
+        if ( ! $property_id ) {
+            wp_send_json_error( array( 'message' => 'Property mapping is missing for this accommodation' ) );
+        }
+
+        $date_from = $this->normalize_date_ymd( $check_in_raw );
+        if ( ! $date_from ) {
+            wp_send_json_error( array( 'message' => 'Check-in date is required' ) );
+        }
+
+        // Cache per property/day to keep UI snappy (PMS call can be slow).
+        $transient_key = 'gs_hb_min_stay_one_' . md5( 'v1|' . intval( $property_id ) . '|' . $date_from );
+        $cached = get_transient( $transient_key );
+        if ( is_array( $cached ) && isset( $cached['min_stay'] ) ) {
+            wp_send_json_success(
+                array(
+                    'date_from' => $date_from,
+                    'min_stay' => max( 1, intval( $cached['min_stay'] ) ),
+                    'cached' => true,
+                )
+            );
+        }
+
+        $min_stay = $this->fetch_min_stay_for_property_date( $property_id, $date_from );
+
+        // If PMS didn't respond or returned empty -> default to 2 nights (block next-day checkout).
+        $cache_ttl = 30 * MINUTE_IN_SECONDS;
+        if ( $min_stay === null ) {
+            $min_stay = 2;
+            // Short cache for fallback so we can recover quickly when PMS is back.
+            $cache_ttl = 1 * MINUTE_IN_SECONDS;
+        } else {
+            $min_stay = max( 1, intval( $min_stay ) );
+        }
+
+        set_transient( $transient_key, array( 'min_stay' => $min_stay ), $cache_ttl );
+
+        wp_send_json_success(
+            array(
+                'date_from' => $date_from,
+                'min_stay' => $min_stay,
+            )
+        );
+    }
+
     public function ajax_hb_book_now() {
         check_ajax_referer( 'goldenstay_frontend_nonce', 'nonce' );
 
@@ -441,7 +506,19 @@ class GoldenStay_HBook_Compat {
         }
 
         // Re-check availability right before creating reservation.
-        if ( ! $this->is_available_for_period( $property_id, $date_from, $date_to ) ) {
+        $availability = $this->is_available_for_period( $property_id, $date_from, $date_to );
+        if ( empty( $availability['is_available'] ) ) {
+            if (
+                isset( $availability['reason'] ) &&
+                $availability['reason'] === 'min_stay' &&
+                ! empty( $availability['min_stay'] )
+            ) {
+                wp_send_json_error(
+                    array(
+                        'message' => 'Minimum stay is ' . intval( $availability['min_stay'] ) . ' nights. Please choose a later check-out date.',
+                    )
+                );
+            }
             wp_send_json_error( array( 'message' => 'Selected dates are no longer available. Please choose other dates.' ) );
         }
 
@@ -1018,12 +1095,18 @@ class GoldenStay_HBook_Compat {
     private function is_available_for_period( $property_id, $date_from, $date_to ) {
         $property_id = intval( $property_id );
         if ( ! $property_id || ! $date_from || ! $date_to ) {
-            return false;
+            return array( 'is_available' => false, 'reason' => 'invalid_params' );
         }
 
+        $nights = $this->diff_nights( $date_from, $date_to );
+        if ( $nights <= 0 ) {
+            return array( 'is_available' => false, 'reason' => 'invalid_dates' );
+        }
+
+        // HBook convention: API period checks are based on nights, so checkout day is excluded.
         $last_night = date( 'Y-m-d', strtotime( $date_to . ' -1 day' ) );
         if ( strtotime( $last_night ) < strtotime( $date_from ) ) {
-            return false;
+            return array( 'is_available' => false, 'reason' => 'invalid_dates' );
         }
 
         $endpoint = sprintf(
@@ -1046,17 +1129,81 @@ class GoldenStay_HBook_Compat {
 
         foreach ( $days as $day ) {
             if ( is_array( $day ) && $this->is_calendar_day_taken( $day ) ) {
-                return false;
+                return array( 'is_available' => false, 'reason' => 'taken' );
             }
         }
 
-        return true;
+        $min_stay = 1;
+        foreach ( $days as $day ) {
+            if ( ! is_array( $day ) || empty( $day['date'] ) ) {
+                continue;
+            }
+            $day_date = substr( (string) $day['date'], 0, 10 );
+            if ( $day_date === $date_from ) {
+                $min_stay = isset( $day['min_stay'] ) ? intval( $day['min_stay'] ) : 1;
+                break;
+            }
+        }
+        $min_stay = max( 1, intval( $min_stay ) );
+        if ( $nights < $min_stay ) {
+            return array(
+                'is_available' => false,
+                'reason' => 'min_stay',
+                'min_stay' => $min_stay,
+            );
+        }
+
+        return array( 'is_available' => true, 'reason' => 'ok', 'min_stay' => $min_stay );
+    }
+
+    private function fetch_min_stay_for_property_date( $property_id, $date_from ) {
+        $endpoint = sprintf(
+            'property/calendar_day/minstay/%d/%s',
+            intval( $property_id ),
+            rawurlencode( $date_from )
+        );
+
+        $response = $this->api_get_json( $endpoint, true );
+        if ( is_wp_error( $response ) ) {
+            return null;
+        }
+
+        $status_code = wp_remote_retrieve_response_code( $response );
+        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( $status_code !== 200 || ! is_array( $data ) ) {
+            return null;
+        }
+
+        if ( isset( $data['min_stay'] ) && $data['min_stay'] !== null ) {
+            $min_stay = intval( $data['min_stay'] );
+            return $min_stay > 0 ? $min_stay : 1;
+        }
+
+        return null;
     }
 
     private function is_available_for_period_via_reservations( $property_id, $date_from, $date_to ) {
         $hidden_ids = $this->get_hidden_reservation_ids_for_property( $property_id );
         $reservations = $this->fetch_reservations_for_property( $property_id );
-        return $this->is_range_free_from_reservations( $reservations, $date_from, $date_to, $hidden_ids );
+        $is_free = $this->is_range_free_from_reservations( $reservations, $date_from, $date_to, $hidden_ids );
+
+        if ( ! $is_free ) {
+            return array( 'is_available' => false, 'reason' => 'taken' );
+        }
+
+        $min_stay = $this->fetch_min_stay_for_property_date( $property_id, $date_from );
+        $min_stay = $min_stay ? max( 1, intval( $min_stay ) ) : 1;
+
+        $nights = $this->diff_nights( $date_from, $date_to );
+        if ( $nights < $min_stay ) {
+            return array(
+                'is_available' => false,
+                'reason' => 'min_stay',
+                'min_stay' => $min_stay,
+            );
+        }
+
+        return array( 'is_available' => true, 'reason' => 'ok', 'min_stay' => $min_stay );
     }
 
     private function is_range_free_from_reservations( $reservations, $range_from, $range_to, $hidden_ids = array() ) {
@@ -1619,9 +1766,17 @@ class GoldenStay_HBook_Compat {
             $accom_name = 'Accommodation';
         }
 
-        $available = $this->is_available_for_period( $property_id, $date_from, $date_to );
-        if ( ! $available ) {
-            $msg = esc_html( $accom_name ) . ' is niet beschikbaar op de door jou gekozen data';
+        $availability = $this->is_available_for_period( $property_id, $date_from, $date_to );
+        if ( empty( $availability['is_available'] ) ) {
+            if (
+                isset( $availability['reason'] ) &&
+                $availability['reason'] === 'min_stay' &&
+                ! empty( $availability['min_stay'] )
+            ) {
+                $msg = 'Minimum verblijf is ' . intval( $availability['min_stay'] ) . ' nachten voor deze aankomstdatum';
+            } else {
+                $msg = esc_html( $accom_name ) . ' is niet beschikbaar op de door jou gekozen data';
+            }
             $mark_up = '<div class="hb-accom-step-wrapper hb-step-wrapper">' .
                 '<div class="hb-accom-list">' .
                     '<div class="hb-accom hb-clearfix">' .
@@ -1744,8 +1899,20 @@ class GoldenStay_HBook_Compat {
         }
 
         static $cache = array();
+        static $cache_min_stay_by_day = array();
         $cache_key = $property_id . '|' . ( $date_from ?: 'legacy' ) . '|' . ( $date_to ?: 'legacy' );
+        $transient_key_min_stay_by_day = 'gs_hb_min_stay_' . md5( 'v1|' . $cache_key );
+
+        // Reset per-call meta (important when caches are bypassed).
+        $this->last_calendar_min_stay_by_day = array();
         if ( ! $debug_enabled && isset( $cache[ $cache_key ] ) ) {
+            if ( isset( $cache_min_stay_by_day[ $cache_key ] ) && is_array( $cache_min_stay_by_day[ $cache_key ] ) ) {
+                $this->last_calendar_min_stay_by_day = $cache_min_stay_by_day[ $cache_key ];
+            } else {
+                $cached_min_stay_by_day = get_transient( $transient_key_min_stay_by_day );
+                $this->last_calendar_min_stay_by_day = is_array( $cached_min_stay_by_day ) ? $cached_min_stay_by_day : array();
+                $cache_min_stay_by_day[ $cache_key ] = $this->last_calendar_min_stay_by_day;
+            }
             $this->last_calendar_fetch_response = array(
                 'cacheType' => 'static',
                 'cacheKey' => $cache_key,
@@ -1758,16 +1925,21 @@ class GoldenStay_HBook_Compat {
                 'source' => $date_from && $date_to ? 'calendar_day_period' : 'legacy',
                 'rawDayCount' => isset( $this->last_calendar_days_raw ) && is_array( $this->last_calendar_days_raw ) ? count( $this->last_calendar_days_raw ) : 0,
                 'reservationsCount' => isset( $cache[ $cache_key ] ) ? count( $cache[ $cache_key ] ) : 0,
+                'minStayCount' => count( $this->last_calendar_min_stay_by_day ),
                 'responseMeta' => $this->last_calendar_fetch_response,
             );
             return $cache[ $cache_key ];
         }
 
         // Cache across requests to avoid hammering PMS on every page view.
-        $transient_key = 'gs_hb_res_' . md5( 'v3|' . $cache_key );
+        // v4: bump to invalidate older cached payloads (pre-min-stay support).
+        $transient_key = 'gs_hb_res_' . md5( 'v4|' . $cache_key );
         $cached = $debug_enabled ? null : get_transient( $transient_key );
+        $cached_min_stay_by_day = $debug_enabled ? null : get_transient( $transient_key_min_stay_by_day );
         if ( ! $debug_enabled && is_array( $cached ) ) {
             $cache[ $cache_key ] = $cached;
+            $this->last_calendar_min_stay_by_day = is_array( $cached_min_stay_by_day ) ? $cached_min_stay_by_day : array();
+            $cache_min_stay_by_day[ $cache_key ] = $this->last_calendar_min_stay_by_day;
             $this->last_calendar_fetch_response = array(
                 'cacheType' => 'transient',
                 'transientKey' => $transient_key,
@@ -1780,6 +1952,7 @@ class GoldenStay_HBook_Compat {
                 'source' => $date_from && $date_to ? 'calendar_day_period' : 'legacy',
                 'rawDayCount' => isset( $this->last_calendar_days_raw ) && is_array( $this->last_calendar_days_raw ) ? count( $this->last_calendar_days_raw ) : 0,
                 'reservationsCount' => count( $cached ),
+                'minStayCount' => count( $this->last_calendar_min_stay_by_day ),
                 'responseMeta' => $this->last_calendar_fetch_response,
             );
             return $cache[ $cache_key ];
@@ -1800,6 +1973,7 @@ class GoldenStay_HBook_Compat {
             $normalized = $this->fetch_reservations_via_legacy_endpoint( $property_id );
             $raw_days_snapshot = array();
             $source_used = 'legacy';
+            $this->last_calendar_min_stay_by_day = array();
         }
 
         if ( ! is_array( $normalized ) ) {
@@ -1809,9 +1983,11 @@ class GoldenStay_HBook_Compat {
         // 5 minutes is enough: avoids spam while still updating reasonably fast.
         if ( ! $debug_enabled ) {
             set_transient( $transient_key, $normalized, 5 * MINUTE_IN_SECONDS );
+            set_transient( $transient_key_min_stay_by_day, $this->last_calendar_min_stay_by_day, 5 * MINUTE_IN_SECONDS );
         }
 
         $cache[ $cache_key ] = $normalized;
+        $cache_min_stay_by_day[ $cache_key ] = $this->last_calendar_min_stay_by_day;
 
         $this->last_calendar_fetch_debug = array(
             'cacheHit' => false,
@@ -1823,6 +1999,7 @@ class GoldenStay_HBook_Compat {
             'rawDayCount' => is_array( $raw_days_snapshot ) ? count( $raw_days_snapshot ) : 0,
             'rawSample' => is_array( $raw_days_snapshot ) ? array_slice( $raw_days_snapshot, 0, 20 ) : array(),
             'reservationsCount' => is_array( $normalized ) ? count( $normalized ) : 0,
+            'minStayCount' => is_array( $this->last_calendar_min_stay_by_day ) ? count( $this->last_calendar_min_stay_by_day ) : 0,
             'responseMeta' => $this->last_calendar_fetch_response,
             'calendarDaysSample' => $this->last_calendar_days_sample,
         );
@@ -1866,6 +2043,7 @@ class GoldenStay_HBook_Compat {
 
         $this->last_calendar_days_raw = $data;
         $this->last_calendar_days_sample = array_slice( $data, 0, 50 );
+        $this->last_calendar_min_stay_by_day = $this->calendar_days_to_min_stay_by_day( $data );
 
         return $this->calendar_days_to_reservations( $data );
     }
@@ -1993,6 +2171,30 @@ class GoldenStay_HBook_Compat {
         }
 
         return $reservations;
+    }
+
+    private function calendar_days_to_min_stay_by_day( $days ) {
+        $map = array();
+        if ( ! is_array( $days ) || empty( $days ) ) {
+            return $map;
+        }
+
+        foreach ( $days as $day ) {
+            if ( ! is_array( $day ) || empty( $day['date'] ) ) {
+                continue;
+            }
+            $date = substr( (string) $day['date'], 0, 10 );
+            if ( ! $date ) {
+                continue;
+            }
+            $min_stay = isset( $day['min_stay'] ) ? intval( $day['min_stay'] ) : 0;
+            // To keep payload small we only include overrides (> 1). Frontend falls back to booking_rules.minimum_stay.
+            if ( $min_stay > 1 ) {
+                $map[ $date ] = $min_stay;
+            }
+        }
+
+        return $map;
     }
 
     private function is_calendar_day_taken( $day ) {
@@ -2487,6 +2689,10 @@ class GoldenStay_HBook_Compat {
                     'min_date' => $range_from,
                     'max_date' => $range_to,
                 );
+                // Always expose the object (even empty) so JS can cache per-date overrides on-demand.
+                $datepick_window['min_stay_by_day'] = is_array( $this->last_calendar_min_stay_by_day )
+                    ? $this->last_calendar_min_stay_by_day
+                    : array();
             }
         }
 
