@@ -32,7 +32,6 @@ $fee_ids_str = is_array( $fee_ids_opt ) ? implode( ',', array_map( 'intval', $fe
                         <div class="user-info">
                             <p><strong>Email:</strong> <?php echo esc_html( $user_data['email'] ?? 'N/A' ); ?></p>
                             <p><strong>Name:</strong> <?php echo esc_html( $user_data['name'] ?? 'N/A' ); ?></p>
-                            <p><strong>Token:</strong> <code><?php echo esc_html( substr( get_option( 'goldenstay_api_token' ), 0, 20 ) . '...' ); ?></code></p>
                         </div>
                         <button type="button" class="button button-secondary" id="goldenstay-logout-btn">
                             <span class="dashicons dashicons-exit"></span>
@@ -84,7 +83,7 @@ $fee_ids_str = is_array( $fee_ids_opt ) ? implode( ',', array_map( 'intval', $fe
                                         </p>
                                     </td>
                                 </tr>
-                                <tr>
+                                <!-- <tr>
                                     <th scope="row">
                                         <label for="calc_prices_fee_ids">Calc-prices fee IDs</label>
                                     </th>
@@ -102,7 +101,7 @@ $fee_ids_str = is_array( $fee_ids_opt ) ? implode( ',', array_map( 'intval', $fe
                                             Leave empty to auto-include non-optional fees.
                                         </p>
                                     </td>
-                                </tr>
+                                </tr> -->
                             </table>
                             <button type="submit" class="button button-primary">Save Settings</button>
                         </form>
