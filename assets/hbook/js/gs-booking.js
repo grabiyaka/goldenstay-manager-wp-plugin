@@ -77,6 +77,95 @@
     }
   }
 
+  // People (adults + children) capacity limiting.
+  // The wrapper can expose `data-can-sleep-max="16"` (see PHP shortcode renderer).
+  function getWrapperMaxGuests($wrapper) {
+    if (!$wrapper || !$wrapper.length) return 0
+    var max = parseInt($wrapper.attr('data-can-sleep-max'), 10)
+    if (!Number.isFinite(max)) max = 0
+    return max > 0 ? max : 0
+  }
+
+  function buildNumberOptions(min, max) {
+    var out = ''
+    for (var i = min; i <= max; i++) {
+      out += '<option value="' + String(i) + '">' + String(i) + '</option>'
+    }
+    return out
+  }
+
+  function getPlaceholderOptionHtml($select) {
+    if (!$select || !$select.length) return ''
+    var $opt = $select.find('option:disabled').first()
+    if (!$opt.length) return ''
+    try {
+      return $opt.prop('outerHTML') || ''
+    } catch (_) {
+      return '<option disabled>' + ($opt.text() || '') + '</option>'
+    }
+  }
+
+  function rebuildNumberSelect($select, min, max, selectedValue) {
+    if (!$select || !$select.length) return
+    min = parseInt(min, 10)
+    max = parseInt(max, 10)
+    if (!Number.isFinite(min)) min = 0
+    if (!Number.isFinite(max)) max = min
+    if (max < min) max = min
+
+    var placeholderHtml = getPlaceholderOptionHtml($select)
+    $select.html(placeholderHtml + buildNumberOptions(min, max))
+
+    if (selectedValue !== null && selectedValue !== undefined) {
+      $select.val(String(selectedValue))
+    }
+  }
+
+  function enforcePeopleCapacity($form, changedKey) {
+    if (!$form || !$form.length) return
+    var $wrapper = $form.closest('.hbook-wrapper[data-gs-hb-compat="1"]')
+    var maxGuests = getWrapperMaxGuests($wrapper)
+    if (!maxGuests) return
+
+    var $adults = $form.find('select.hb-adults').first()
+    var $children = $form.find('select.hb-children').first()
+    if (!$adults.length || !$children.length) return
+
+    var rawAdults = parseInt($adults.val(), 10)
+    var rawChildren = parseInt($children.val(), 10)
+    var adultsHas = Number.isFinite(rawAdults)
+    var childrenHas = Number.isFinite(rawChildren)
+
+    var adults = adultsHas ? rawAdults : 1
+    var children = childrenHas ? rawChildren : 0
+
+    // Basic clamping
+    adults = Math.max(1, Math.min(adults, maxGuests))
+    children = Math.max(0, Math.min(children, maxGuests))
+
+    // Clamp changed value first (if any)
+    if (changedKey === 'adults') {
+      adults = Math.max(1, Math.min(adults, Math.max(1, maxGuests - children)))
+    } else if (changedKey === 'children') {
+      children = Math.max(0, Math.min(children, Math.max(0, maxGuests - adults)))
+    }
+
+    // Ensure total never exceeds the max.
+    if (adults + children > maxGuests) {
+      // Prefer keeping adults (min 1) and clamp children.
+      children = Math.max(0, maxGuests - adults)
+      if (adults + children > maxGuests) {
+        adults = Math.max(1, maxGuests - children)
+      }
+    }
+
+    var adultsMax = Math.max(1, maxGuests - children)
+    var childrenMax = Math.max(0, maxGuests - adults)
+
+    rebuildNumberSelect($adults, 1, adultsMax, adultsHas ? adults : null)
+    rebuildNumberSelect($children, 0, childrenMax, childrenHas ? children : null)
+  }
+
   function showFormError($form, message) {
     var $error = $form.find('.hb-search-error')
     if ($error.length) {
@@ -295,6 +384,9 @@
       debugLog('[GS HB] gsHbBooking config missing, fallback to normal submit', window.gsHbBooking)
       return true
     }
+
+    // Ensure adults + children never exceeds property capacity (can_sleep_max).
+    enforcePeopleCapacity($form, null)
 
     var accomId = parseInt($wrapper.data('page-accom-id'), 10) || 0
     if (!accomId) {
@@ -836,6 +928,25 @@
     },
   )
 
+  // Adults / children selects: enforce max guests (adults + children <= can_sleep_max)
+  $(document).on(
+    'change',
+    '.hbook-wrapper[data-gs-hb-compat="1"] form.hb-booking-search-form select.hb-adults',
+    function () {
+      var $form = $(this).closest('form.hb-booking-search-form')
+      enforcePeopleCapacity($form, 'adults')
+    },
+  )
+
+  $(document).on(
+    'change',
+    '.hbook-wrapper[data-gs-hb-compat="1"] form.hb-booking-search-form select.hb-children',
+    function () {
+      var $form = $(this).closest('form.hb-booking-search-form')
+      enforcePeopleCapacity($form, 'children')
+    },
+  )
+
   // "Change search" button: expand form again and clear results (matches original flow)
   $(document).on(
     'click',
@@ -878,6 +989,7 @@
         // Keep fields visible by default
         $form.find('.hb-search-fields-and-submit').show()
         showFormError($form, '')
+        enforcePeopleCapacity($form, null)
       }
     })
 

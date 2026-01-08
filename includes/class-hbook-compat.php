@@ -634,6 +634,16 @@ class GoldenStay_HBook_Compat {
         $children = max( 0, intval( $children ) );
         $guests = max( 1, $adults + $children );
 
+        // Capacity check: adults + children must be <= can_sleep_max.
+        $capacity = $this->get_property_can_sleep_max( $property_id );
+        if ( $capacity > 0 && $guests > $capacity ) {
+            wp_send_json_error(
+                array(
+                    'message' => 'Maximum number of guests is ' . intval( $capacity ) . '.',
+                )
+            );
+        }
+
         $parse_ids = function ( $raw ) {
             $ids = array();
             $raw = trim( (string) $raw );
@@ -866,6 +876,16 @@ class GoldenStay_HBook_Compat {
         $adults = max( 0, intval( $adults ) );
         $children = max( 0, intval( $children ) );
         $guests = max( 1, $adults + $children );
+
+        // Capacity check: adults + children must be <= can_sleep_max.
+        $capacity = $this->get_property_can_sleep_max( $property_id );
+        if ( $capacity > 0 && $guests > $capacity ) {
+            wp_send_json_error(
+                array(
+                    'message' => 'Maximum number of guests is ' . intval( $capacity ) . '.',
+                )
+            );
+        }
 
         $parse_ids = function ( $raw ) {
             $ids = array();
@@ -1170,6 +1190,46 @@ class GoldenStay_HBook_Compat {
         // 6 hours: fees do not change often.
         set_transient( $transient_key, $map, 6 * HOUR_IN_SECONDS );
         return $map;
+    }
+
+    /**
+     * Fetch and cache property capacity (can_sleep_max).
+     * Used for limiting adults/children selects (adults + children must be <= can_sleep_max).
+     */
+    private function get_property_can_sleep_max( $property_id ) {
+        $property_id = intval( $property_id );
+        if ( ! $property_id ) {
+            return 0;
+        }
+
+        $transient_key = 'gs_prop_can_sleep_max_v1_' . $property_id;
+        $cached = get_transient( $transient_key );
+        if ( is_numeric( $cached ) ) {
+            return max( 0, intval( $cached ) );
+        }
+
+        $response = $this->api_get_json( 'property/' . $property_id, true );
+        if ( is_wp_error( $response ) ) {
+            return 0;
+        }
+
+        $status_code = wp_remote_retrieve_response_code( $response );
+        $data = json_decode( wp_remote_retrieve_body( $response ), true );
+        if ( $status_code !== 200 || ! is_array( $data ) ) {
+            return 0;
+        }
+
+        // Some APIs wrap the payload.
+        if ( isset( $data['property'] ) && is_array( $data['property'] ) ) {
+            $data = $data['property'];
+        }
+
+        $max = isset( $data['can_sleep_max'] ) ? intval( $data['can_sleep_max'] ) : 0;
+        $max = max( 0, $max );
+
+        // 6 hours: capacity rarely changes and this avoids extra API calls per page view.
+        set_transient( $transient_key, $max, 6 * HOUR_IN_SECONDS );
+        return $max;
     }
 
     private function get_calc_prices_fee_ids( $property_id, $fees_by_id = array() ) {
@@ -1875,6 +1935,15 @@ class GoldenStay_HBook_Compat {
         $children = max( 0, intval( $children ) );
         $guests = max( 1, $adults + $children );
         $nights = $this->diff_nights( $date_from, $date_to );
+
+        // Capacity check: adults + children must be <= can_sleep_max.
+        $capacity = $this->get_property_can_sleep_max( $property_id );
+        if ( $capacity > 0 && $guests > $capacity ) {
+            return array(
+                'success' => false,
+                'message' => 'Maximum number of guests is ' . intval( $capacity ) . '.',
+            );
+        }
 
         $accom_name = get_the_title( $accom_id );
         if ( ! $accom_name ) {
@@ -2863,6 +2932,18 @@ class GoldenStay_HBook_Compat {
             }
         }
 
+        // Capacity (can_sleep_max) for this accommodation (adults + children must be <= can_sleep_max).
+        // If we don't have a concrete accommodation context -> keep the historical 20 values.
+        $mapped_property_id = 0;
+        $can_sleep_max = 0;
+        if ( $page_accom_id ) {
+            $mapped_property_id = GoldenStay_Accommodation_Mapping::get_property_id_for_accom( $page_accom_id );
+            if ( $mapped_property_id ) {
+                $can_sleep_max = $this->get_property_can_sleep_max( $mapped_property_id );
+            }
+        }
+        $people_max = $can_sleep_max > 0 ? $can_sleep_max : 20;
+
         // Minimal wrapper required by hb-datepick.js
         $wrapper_rules = array(
             'allowed_check_in_days' => 'all',
@@ -2931,8 +3012,8 @@ class GoldenStay_HBook_Compat {
             $markup = str_replace( '[search_label]', '<label for="hb-search-form-submit">&nbsp;</label>', $markup );
         }
 
-        $markup = str_replace( '[people_selects_adults]', $this->build_people_select( 'adults', 1, 20, $search_placeholder ), $markup );
-        $markup = str_replace( '[people_selects_children]', $this->build_people_select( 'children', 0, 20, $search_placeholder ), $markup );
+        $markup = str_replace( '[people_selects_adults]', $this->build_people_select( 'adults', 1, $people_max, $search_placeholder ), $markup );
+        $markup = str_replace( '[people_selects_children]', $this->build_people_select( 'children', 0, $people_max, $search_placeholder ), $markup );
 
         // Replace generic placeholders
         $form_id_attr = $form_id ? 'id="' . esc_attr( $form_id ) . '"' : '';
@@ -2969,9 +3050,7 @@ class GoldenStay_HBook_Compat {
 
         $status_days_for_datepick = array();
         $datepick_window = '0';
-        if ( $page_accom_id ) {
-            $mapped_property_id = GoldenStay_Accommodation_Mapping::get_property_id_for_accom( $page_accom_id );
-            if ( $mapped_property_id ) {
+        if ( $page_accom_id && $mapped_property_id ) {
                 // Datepick window (min/max selectable dates).
                 // Previously we used compute_prefetch_range() which capped at ~4-6 months for performance.
                 // For real booking flows we need a larger horizon (the PMS calendar is typically initialized for years ahead).
@@ -2997,7 +3076,6 @@ class GoldenStay_HBook_Compat {
                 $datepick_window['min_stay_by_day'] = is_array( $this->last_calendar_min_stay_by_day )
                     ? $this->last_calendar_min_stay_by_day
                     : array();
-            }
         }
 
         // Wrap to provide booking rules for hb-datepick.js
@@ -3010,6 +3088,7 @@ class GoldenStay_HBook_Compat {
         $out = '<div id="' . esc_attr( 'hbook-booking-form-' . $gs_booking_form_num ) . '" class="' . esc_attr( $wrapper_classes ) . '" data-gs-hb-compat="1" ' .
             'data-booking-rules=\'' . esc_attr( wp_json_encode( $wrapper_rules ) ) . '\' ' .
             ( $page_accom_id ? 'data-page-accom-id="' . esc_attr( $page_accom_id ) . '" ' : '' ) .
+            ( $can_sleep_max > 0 ? 'data-can-sleep-max="' . esc_attr( intval( $can_sleep_max ) ) . '" ' : '' ) .
             '>';
 
         // Provide globals used by hb-datepick.js for this page scope.
