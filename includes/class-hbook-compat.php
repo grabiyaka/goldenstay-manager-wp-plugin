@@ -772,7 +772,7 @@ class GoldenStay_HBook_Compat {
             'number_of_adults' => intval( $adults ),
             'number_of_children' => intval( $children ),
             'units' => 1,
-            'creator' => 'website',
+            'creator' => 'bosvilla@goldenstay.nl',
             'notify' => false,
             'channel_commission' => null,
 
