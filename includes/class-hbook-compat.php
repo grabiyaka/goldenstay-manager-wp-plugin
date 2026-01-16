@@ -413,7 +413,7 @@ class GoldenStay_HBook_Compat {
                 'Content-Type' => 'application/json',
             ),
             'body' => wp_json_encode( $body ),
-            'timeout' => 30,
+            'timeout' => 60,
         );
         if ( $with_token ) {
             $token = GoldenStay_Manager::get_api_token();
@@ -799,8 +799,8 @@ class GoldenStay_HBook_Compat {
             'customer_country_id' => null,
             'customer_language_id' => 11, // 11 = nl (used elsewhere in PMS)
 
-            // No quotes: create a regular reservation
-            'is_quote' => false,
+            // Unconfirmed reservations from website
+            'is_quote' => true,
 
             'selected_fees' => $selected_fees,
         );
@@ -3220,7 +3220,7 @@ class GoldenStay_HBook_Compat {
         $out .= '</div>';
         return $out;
     }
- 
+
     private function render_calendar_debug_script( $data ) {
         if ( empty( $data ) ) {
             return '';
@@ -3234,5 +3234,3 @@ class GoldenStay_HBook_Compat {
         return '<script>(function(){window.goldenStayCalendarDebug = window.goldenStayCalendarDebug || []; window.goldenStayCalendarDebug.push(' . $json . '); if ( window.console && console.info ) { console.info("GoldenStay calendar data", ' . $json . ' ); }} )();</script>';
     }
 }
-
-
