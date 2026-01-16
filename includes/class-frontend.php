@@ -84,7 +84,8 @@ class GoldenStay_Frontend {
         wp_localize_script( 'goldenstay-frontend-js', 'goldenStayFrontend', array(
             'ajaxUrl' => admin_url( 'admin-ajax.php' ),
             'apiUrl' => GoldenStay_Manager::get_api_url(),
-            'nonce' => wp_create_nonce( 'goldenstay_frontend_nonce' )
+            'nonce' => wp_create_nonce( 'goldenstay_frontend_nonce' ),
+            'excludedPropertyIds' => array_values( array_unique( array_map( 'intval', (array) get_option( 'goldenstay_excluded_property_ids', array() ) ) ) ),
         ));
         
         $assets_enqueued = true;

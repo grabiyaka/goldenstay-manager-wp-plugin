@@ -128,6 +128,7 @@
             const apiUrl = $('#api_url').val();
             const calendarHorizonMonths = $('#calendar_horizon_months').val();
             const calcPricesFeeIds = $('#calc_prices_fee_ids').val();
+            const excludedPropertyIds = $('#excluded_property_ids').val();
             
             $.ajax({
                 url: goldenStayAdmin.ajaxUrl,
@@ -137,7 +138,8 @@
                     nonce: goldenStayAdmin.nonce,
                     api_url: apiUrl,
                     calendar_horizon_months: calendarHorizonMonths,
-                    calc_prices_fee_ids: calcPricesFeeIds
+                    calc_prices_fee_ids: calcPricesFeeIds,
+                    excluded_property_ids: excludedPropertyIds
                 },
                 dataType: 'json',
                 success: function(response) {

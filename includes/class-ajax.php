@@ -18,6 +18,9 @@ class GoldenStay_Ajax {
         add_action( 'wp_ajax_goldenstay_get_properties', array( __CLASS__, 'ajax_get_properties' ) );
         add_action( 'wp_ajax_goldenstay_get_reservations', array( __CLASS__, 'ajax_get_reservations' ) );
         add_action( 'wp_ajax_goldenstay_toggle_reservation_visibility', array( __CLASS__, 'ajax_toggle_reservation_visibility' ) );
+        add_action( 'wp_ajax_goldenstay_update_accommodation_mapping', array( __CLASS__, 'ajax_update_accommodation_mapping' ) );
+        add_action( 'wp_ajax_goldenstay_unlink_accommodation_property', array( __CLASS__, 'ajax_unlink_accommodation_property' ) );
+        add_action( 'wp_ajax_goldenstay_create_accommodation_from_property', array( __CLASS__, 'ajax_create_accommodation_from_property' ) );
 
         // Public AJAX (no auth required)
         add_action( 'wp_ajax_goldenstay_get_properties_public', array( __CLASS__, 'ajax_get_properties' ) );
@@ -169,11 +172,29 @@ class GoldenStay_Ajax {
         $fee_ids = array_values( array_unique( $fee_ids ) );
         update_option( 'goldenstay_calc_prices_fee_ids', $fee_ids );
 
+        // Optional: exclude property IDs from frontend properties list shortcode
+        $excluded_raw = isset( $_POST['excluded_property_ids'] ) ? sanitize_text_field( $_POST['excluded_property_ids'] ) : '';
+        $excluded_ids = array();
+        if ( $excluded_raw ) {
+            $parts = preg_split( '/[,\s]+/', $excluded_raw );
+            if ( is_array( $parts ) ) {
+                foreach ( $parts as $p ) {
+                    $id = intval( trim( (string) $p ) );
+                    if ( $id > 0 ) {
+                        $excluded_ids[] = $id;
+                    }
+                }
+            }
+        }
+        $excluded_ids = array_values( array_unique( $excluded_ids ) );
+        update_option( 'goldenstay_excluded_property_ids', $excluded_ids );
+
         wp_send_json_success( array(
             'message' => 'Settings saved',
             'api_url' => $api_url,
             'calendar_horizon_months' => $months,
             'calc_prices_fee_ids' => $fee_ids,
+            'excluded_property_ids' => $excluded_ids,
         ) );
     }
 
@@ -234,6 +255,166 @@ class GoldenStay_Ajax {
             $error_message = ( is_array( $body ) ? ( $body['message'] ?? $body['error'] ?? null ) : null ) ?: 'Failed to fetch properties';
             wp_send_json_error( array( 'message' => $error_message ) );
         }
+    }
+
+    /**
+     * AJAX: Update accommodation ↔ property mapping from admin list screen.
+     */
+    public static function ajax_update_accommodation_mapping() {
+        check_ajax_referer( 'goldenstay_admin_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'edit_posts' ) ) {
+            wp_send_json_error( array( 'message' => 'You do not have permission to perform this action' ) );
+        }
+
+        $accom_id = isset( $_POST['accom_id'] ) ? intval( $_POST['accom_id'] ) : 0;
+        if ( $accom_id <= 0 ) {
+            wp_send_json_error( array( 'message' => 'Accommodation ID is required' ) );
+        }
+        if ( ! current_user_can( 'edit_post', $accom_id ) ) {
+            wp_send_json_error( array( 'message' => 'You do not have permission to edit this accommodation' ) );
+        }
+
+        $post = get_post( $accom_id );
+        if ( ! $post || $post->post_type !== 'hb_accommodation' ) {
+            wp_send_json_error( array( 'message' => 'Invalid accommodation' ) );
+        }
+
+        $property_id = isset( $_POST['property_id'] ) ? intval( $_POST['property_id'] ) : 0;
+        if ( $property_id > 0 ) {
+            update_post_meta( $accom_id, GoldenStay_Accommodation_Mapping::META_PROPERTY_ID, $property_id );
+        } else {
+            delete_post_meta( $accom_id, GoldenStay_Accommodation_Mapping::META_PROPERTY_ID );
+        }
+
+        $use_goldenstay_booking = isset( $_POST['use_goldenstay_booking'] ) ? intval( $_POST['use_goldenstay_booking'] ) : 0;
+        if ( $use_goldenstay_booking ) {
+            update_post_meta( $accom_id, GoldenStay_Accommodation_Mapping::META_USE_GOLDENSTAY_BOOKING, '1' );
+        } else {
+            delete_post_meta( $accom_id, GoldenStay_Accommodation_Mapping::META_USE_GOLDENSTAY_BOOKING );
+        }
+
+        wp_send_json_success( array(
+            'accom_id' => $accom_id,
+            'property_id' => $property_id,
+            'use_goldenstay_booking' => $use_goldenstay_booking ? 1 : 0,
+        ) );
+    }
+
+    /**
+     * AJAX: Unlink accommodation from GoldenStay property.
+     */
+    public static function ajax_unlink_accommodation_property() {
+        check_ajax_referer( 'goldenstay_admin_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'edit_posts' ) ) {
+            wp_send_json_error( array( 'message' => 'You do not have permission to perform this action' ) );
+        }
+
+        $accom_id = isset( $_POST['accom_id'] ) ? intval( $_POST['accom_id'] ) : 0;
+        if ( $accom_id <= 0 ) {
+            wp_send_json_error( array( 'message' => 'Accommodation ID is required' ) );
+        }
+        if ( ! current_user_can( 'edit_post', $accom_id ) ) {
+            wp_send_json_error( array( 'message' => 'You do not have permission to edit this accommodation' ) );
+        }
+
+        delete_post_meta( $accom_id, GoldenStay_Accommodation_Mapping::META_PROPERTY_ID );
+        delete_post_meta( $accom_id, GoldenStay_Accommodation_Mapping::META_USE_GOLDENSTAY_BOOKING );
+
+        wp_send_json_success( array( 'accom_id' => $accom_id ) );
+    }
+
+    /**
+     * AJAX: Create a new hb_accommodation post from GoldenStay property_id.
+     *
+     * Creates a DRAFT accommodation with title from API property name and sets goldenstay_property_id.
+     */
+    public static function ajax_create_accommodation_from_property() {
+        check_ajax_referer( 'goldenstay_admin_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'edit_posts' ) ) {
+            wp_send_json_error( array( 'message' => 'You do not have permission to perform this action' ) );
+        }
+
+        $property_id = isset( $_POST['property_id'] ) ? intval( $_POST['property_id'] ) : 0;
+        if ( $property_id <= 0 ) {
+            wp_send_json_error( array( 'message' => 'Property ID is required' ) );
+        }
+
+        $use_goldenstay_booking = isset( $_POST['use_goldenstay_booking'] ) ? intval( $_POST['use_goldenstay_booking'] ) : 0;
+
+        // Fetch property to get a sensible title.
+        $api_url = GoldenStay_Manager::get_api_url();
+        $token = GoldenStay_Manager::get_api_token();
+        $args = array(
+            'timeout' => 30,
+            'headers' => array(
+                'Accept' => 'application/json',
+            ),
+        );
+        if ( ! empty( $token ) ) {
+            $args['headers']['Authorization'] = $token;
+        }
+
+        $response = wp_remote_get( trailingslashit( $api_url ) . 'property/' . $property_id, $args );
+        if ( is_wp_error( $response ) ) {
+            wp_send_json_error( array( 'message' => 'API connection error: ' . $response->get_error_message() ) );
+        }
+        $status_code = wp_remote_retrieve_response_code( $response );
+        $body_raw = wp_remote_retrieve_body( $response );
+        if ( $status_code !== 200 ) {
+            wp_send_json_error( array( 'message' => 'Failed to fetch property from API (HTTP ' . $status_code . ')' ) );
+        }
+        $prop = json_decode( $body_raw, true );
+        if ( ! is_array( $prop ) ) {
+            wp_send_json_error( array( 'message' => 'Invalid property response from API' ) );
+        }
+        $title = (string) ( $prop['name'] ?? $prop['internal_name'] ?? ( 'Property ' . $property_id ) );
+        $title = trim( $title ) !== '' ? $title : ( 'Property ' . $property_id );
+
+        // Avoid duplicates: if an accommodation already mapped to this property_id exists, return it.
+        $existing = new WP_Query( array(
+            'post_type' => 'hb_accommodation',
+            'post_status' => array( 'publish', 'draft', 'private', 'pending' ),
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'meta_query' => array(
+                array(
+                    'key' => GoldenStay_Accommodation_Mapping::META_PROPERTY_ID,
+                    'value' => (string) $property_id,
+                    'compare' => '=',
+                ),
+            ),
+        ) );
+        if ( $existing->have_posts() ) {
+            $id = intval( $existing->posts[0] );
+            wp_send_json_success( array(
+                'accom_id' => $id,
+                'editUrl' => get_edit_post_link( $id, 'raw' ),
+                'message' => 'Accommodation already exists for this property',
+            ) );
+        }
+
+        $post_id = wp_insert_post( array(
+            'post_type' => 'hb_accommodation',
+            'post_title' => $title,
+            'post_status' => 'draft',
+        ), true );
+
+        if ( is_wp_error( $post_id ) ) {
+            wp_send_json_error( array( 'message' => $post_id->get_error_message() ) );
+        }
+
+        update_post_meta( $post_id, GoldenStay_Accommodation_Mapping::META_PROPERTY_ID, $property_id );
+        if ( $use_goldenstay_booking ) {
+            update_post_meta( $post_id, GoldenStay_Accommodation_Mapping::META_USE_GOLDENSTAY_BOOKING, '1' );
+        }
+
+        wp_send_json_success( array(
+            'accom_id' => intval( $post_id ),
+            'editUrl' => get_edit_post_link( $post_id, 'raw' ),
+        ) );
     }
 
     /**

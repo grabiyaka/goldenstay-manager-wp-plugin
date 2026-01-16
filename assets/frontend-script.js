@@ -26,9 +26,23 @@
             success: function(response) {
                 $container.empty();
                 
-                if (response.success && response.data.properties) {
-                    let properties = response.data.properties;
-                    
+                // API may return an array directly (proxied), or a legacy wrapped format.
+                let properties = null;
+                if (Array.isArray(response)) {
+                    properties = response;
+                } else if (response && response.success && response.data && response.data.properties) {
+                    properties = response.data.properties;
+                }
+
+                if (Array.isArray(properties)) {
+                    // Exclude configured property IDs (frontend only)
+                    const excluded = (goldenStayFrontend && Array.isArray(goldenStayFrontend.excludedPropertyIds))
+                        ? goldenStayFrontend.excludedPropertyIds.map(Number).filter(n => n > 0)
+                        : [];
+                    if (excluded.length) {
+                        properties = properties.filter(p => excluded.indexOf(Number(p && p.id)) === -1);
+                    }
+
                     if (limit > 0) {
                         properties = properties.slice(0, limit);
                     }

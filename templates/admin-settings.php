@@ -11,6 +11,8 @@ $is_authenticated = ! empty( get_option( 'goldenstay_api_token' ) );
 $user_data = $is_authenticated ? get_option( 'goldenstay_user_data' ) : null;
 $fee_ids_opt = get_option( 'goldenstay_calc_prices_fee_ids', array() );
 $fee_ids_str = is_array( $fee_ids_opt ) ? implode( ',', array_map( 'intval', $fee_ids_opt ) ) : '';
+$excluded_ids_opt = get_option( 'goldenstay_excluded_property_ids', array() );
+$excluded_ids_str = is_array( $excluded_ids_opt ) ? implode( ',', array_map( 'intval', $excluded_ids_opt ) ) : '';
 ?>
 
 <div class="wrap goldenstay-settings-wrap">
@@ -80,6 +82,25 @@ $fee_ids_str = is_array( $fee_ids_opt ) ? implode( ',', array_map( 'intval', $fe
                                         />
                                         <p class="description">
                                             How many months ahead to allow date selection (e.g. 24 = 2 years, 36 = 3 years).
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">
+                                        <label for="excluded_property_ids">Hide property IDs on website</label>
+                                    </th>
+                                    <td>
+                                        <input
+                                            type="text"
+                                            id="excluded_property_ids"
+                                            name="excluded_property_ids"
+                                            class="regular-text"
+                                            value="<?php echo esc_attr( $excluded_ids_str ); ?>"
+                                            placeholder="e.g. 123,456"
+                                        />
+                                        <p class="description">
+                                            Optional. Comma-separated GoldenStay <strong>property IDs</strong> to exclude from the frontend
+                                            shortcode <code>[goldenstay_properties]</code>. This does not delete properties in your PMS/API.
                                         </p>
                                     </td>
                                 </tr>

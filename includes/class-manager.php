@@ -31,6 +31,7 @@ class GoldenStay_Manager {
         require_once GOLDENSTAY_PLUGIN_DIR . 'includes/class-ajax.php';
         require_once GOLDENSTAY_PLUGIN_DIR . 'includes/class-frontend.php';
         require_once GOLDENSTAY_PLUGIN_DIR . 'includes/class-accommodation-mapping.php';
+        require_once GOLDENSTAY_PLUGIN_DIR . 'includes/class-accommodation-admin-list.php';
         require_once GOLDENSTAY_PLUGIN_DIR . 'includes/class-hbook-compat.php';
     }
     
@@ -46,6 +47,9 @@ class GoldenStay_Manager {
 
         // Accommodation ↔ API property mapping
         GoldenStay_Accommodation_Mapping::get_instance();
+
+        // Manage GoldenStay mapping directly from Accommodation list screen
+        GoldenStay_Accommodation_Admin_List::get_instance();
 
         // HBook compatibility layer (shortcodes + assets) for Adomus theme
         GoldenStay_HBook_Compat::get_instance();

@@ -71,7 +71,7 @@ class GoldenStay_HBook_Compat {
     public function register_shortcodes() {
         global $shortcode_tags;
 
-        $tags = array( 'hb_booking_form', 'hb_availability' );
+        $tags = array( 'hb_booking_form', 'hb_availability', 'hb_search_form' );
         foreach ( $tags as $tag ) {
             if ( isset( $shortcode_tags[ $tag ] ) && ! isset( $this->original_shortcodes[ $tag ] ) ) {
                 $this->original_shortcodes[ $tag ] = $shortcode_tags[ $tag ];
@@ -81,6 +81,7 @@ class GoldenStay_HBook_Compat {
         // Override main HBook shortcodes with conditional delegation.
         add_shortcode( 'hb_availability', array( $this, 'shortcode_availability' ) );
         add_shortcode( 'hb_booking_form', array( $this, 'shortcode_booking_form' ) );
+        add_shortcode( 'hb_search_form', array( $this, 'shortcode_search_form' ) );
 
         // Minimal stubs to avoid raw shortcodes in content when HBook is removed.
         if ( ! $this->hbook_is_active ) {
@@ -3125,6 +3126,62 @@ class GoldenStay_HBook_Compat {
 
         $out .= '</div>';
         return $out;
+    }
+
+    /**
+     * HBook shortcode: [hb_search_form]
+     *
+     * We implement this as a thin wrapper around our booking-form search UI,
+     * so Adomus / hb_search_form_markup filter stays compatible.
+     *
+     * When HBook is active, we delegate back unless GoldenStay override is enabled for the current accommodation context.
+     */
+    public function shortcode_search_form( $atts, $content = null, $shortcode_name = 'hb_search_form' ) {
+        $atts = shortcode_atts(
+            array(
+                'form_id' => '',
+                'search_form_placeholder' => 'no',
+                'redirection_url' => '#',
+                // Compatibility: allow forcing accommodation context.
+                'accom_id' => 'all',
+            ),
+            $atts,
+            'hb_search_form'
+        );
+
+        // Determine the accommodation context (if any) for delegation decision.
+        $delegate_accom_id = 0;
+        if ( ! empty( $atts['accom_id'] ) && $atts['accom_id'] !== 'all' ) {
+            $delegate_accom_id = intval( $atts['accom_id'] );
+        } else {
+            $current_post_id = get_the_ID();
+            if ( $current_post_id && get_post_type( $current_post_id ) === 'hb_accommodation' ) {
+                $delegate_accom_id = intval( $current_post_id );
+            }
+        }
+
+        if ( ! $this->should_use_goldenstay_for_accom( $delegate_accom_id ) ) {
+            if ( isset( $this->original_shortcodes['hb_search_form'] ) ) {
+                return $this->call_shortcode_callback(
+                    $this->original_shortcodes['hb_search_form'],
+                    $atts,
+                    $content,
+                    $shortcode_name
+                );
+            }
+            return '';
+        }
+
+        // Reuse our booking form renderer in "search_only" mode.
+        // This preserves CSS classes and Adomus markup overrides.
+        $booking_atts = array(
+            'form_id' => $atts['form_id'],
+            'search_form_placeholder' => $atts['search_form_placeholder'],
+            'search_only' => 'yes',
+            'redirection_url' => $atts['redirection_url'],
+            'accom_id' => $atts['accom_id'],
+        );
+        return $this->shortcode_booking_form( $booking_atts, $content, 'hb_booking_form' );
     }
 
     private function build_people_select( $key, $min, $max, $placeholder_mode ) {
