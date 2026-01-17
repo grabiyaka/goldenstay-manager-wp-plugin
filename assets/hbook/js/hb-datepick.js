@@ -159,6 +159,28 @@ jQuery(document).ready(function($) {
 	}
 
 	function resize_datepick() {
+		// On mobile/tablet widths we always force a single month to avoid horizontal overflow.
+		// Important: do NOT rely only on matchMedia(max-width) because some themes/browsers use a
+		// "desktop layout viewport" on mobile. Prefer visualViewport + UA detection.
+		var viewport_width = ( window.visualViewport && window.visualViewport.width )
+			? Math.round( window.visualViewport.width )
+			: $( window ).width();
+
+		var is_narrow = false;
+		if ( is_hb_dp_mobile ) {
+			is_narrow = true;
+		} else if ( viewport_width <= 980 ) {
+			is_narrow = true;
+		} else if ( window.matchMedia ) {
+			is_narrow = window.matchMedia( '(max-width: 980px)' ).matches;
+		} else {
+			is_narrow = $( window ).width() <= 980;
+		}
+		if ( is_narrow ) {
+			$( '.hb-datepick-popup' ).datepick( 'option', 'monthsToShow', 1 );
+			return;
+		}
+
 		if ( double_datepick_width > $( window ).width() ) {
 			$( '.hb-datepick-popup' ).datepick( 'option', 'monthsToShow', 1 );
 		} else {
@@ -184,26 +206,71 @@ jQuery(document).ready(function($) {
 			input_bottom = input_top + $check_out.outerHeight( true );
 		}
 
+		var $wrapper = $( '.hb-datepick-popup-wrapper' );
+		// Prefer visualViewport for mobile browsers where layout viewport can be wider than the visible area.
+		// This is the main reason horizontal scrolling can persist even when we "fit" to $(window).width().
+		var viewport_width = ( window.visualViewport && window.visualViewport.width ) ? Math.round( window.visualViewport.width ) : $( window ).width();
+		var viewport_height = ( window.visualViewport && window.visualViewport.height ) ? Math.round( window.visualViewport.height ) : $( window ).height();
 		var available_space_above = input_top - scroll_y,
-			available_space_below = $( window ).height() - input_bottom + scroll_y,
-			available_space_if_align_left = $( window ).width() - input_left + scroll_x,
+			available_space_below = viewport_height - input_bottom + scroll_y,
+			available_space_if_align_left = viewport_width - input_left + scroll_x,
 			available_space_if_align_right = input_right - scroll_x,
-			datepick_width = $( '.hb-datepick-popup-wrapper' ).outerWidth( true ),
-			datepick_height = $( '.hb-datepick-popup-wrapper' ).outerHeight( true );
+			datepick_width = $wrapper.outerWidth( true ),
+			datepick_height = $wrapper.outerHeight( true );
+
+		// If the popup is wider than the viewport (common on phones when a theme sets a "desktop viewport"),
+		// pin it to the viewport instead of trying to align it to the input.
+		var is_narrow = false;
+		if ( window.matchMedia ) {
+			is_narrow = window.matchMedia( '(max-width: 980px)' ).matches;
+		} else {
+			is_narrow = window_width <= 980;
+		}
+		if ( is_hb_dp_mobile || is_narrow || ( datepick_width + 24 > viewport_width ) ) {
+			var top = Math.round( viewport_height * 0.10 );
+			if ( top < 24 ) {
+				top = 24;
+			}
+			$wrapper.css({
+				position: 'fixed',
+				left: 12,
+				right: 12,
+				top: top,
+				// Don't set explicit width when using left+right; this can create over-constraint and horizontal scroll.
+				width: 'auto',
+				maxWidth: 'none',
+				transform: 'none',
+				boxSizing: 'border-box',
+				maxHeight: ( viewport_height - 24 ),
+				overflow: 'auto'
+			});
+			return;
+		}
+
+		// Reset pin-to-viewport styles when we have enough space (desktop/tablet).
+		$wrapper.css({
+			position: '',
+			right: '',
+			width: '',
+			maxWidth: '',
+			transform: '',
+			maxHeight: '',
+			overflow: ''
+		});
 
 		if ( available_space_below > datepick_height ) {
-			$( '.hb-datepick-popup-wrapper' ).css( 'top', input_bottom );
+			$wrapper.css( 'top', input_bottom );
 		} else if ( available_space_above > datepick_height ) {
-			$( '.hb-datepick-popup-wrapper' ).css( 'top', input_top - datepick_height );
+			$wrapper.css( 'top', input_top - datepick_height );
 		} else {
-			$( '.hb-datepick-popup-wrapper' ).css( 'top', scroll_y );
+			$wrapper.css( 'top', scroll_y );
 		}
 		if ( available_space_if_align_left > datepick_width ) {
-			$( '.hb-datepick-popup-wrapper' ).css( 'left', input_left );
+			$wrapper.css( 'left', input_left );
 		} else if ( available_space_if_align_right > datepick_width ) {
-			$( '.hb-datepick-popup-wrapper' ).css( 'left', input_right - datepick_width );
+			$wrapper.css( 'left', input_right - datepick_width );
 		} else {
-			$( '.hb-datepick-popup-wrapper' ).css( 'left', ( $( window ).width() - datepick_width ) / 2 + scroll_x );
+			$wrapper.css( 'left', ( viewport_width - datepick_width ) / 2 + scroll_x );
 		}
 	}
 
@@ -318,6 +385,9 @@ jQuery(document).ready(function($) {
 	function open_datepick_popup( $inputs_wrapper ) {
 		opening_time = new Date().getTime();
 		$inputs_wrapper.addClass( 'hb-datepick-active-inputs' );
+		// Prevent any horizontal scroll while the datepicker is open.
+		// Some mobile browsers expand the layout viewport when a fixed/absolute element is slightly wider.
+		$( 'html, body' ).addClass( 'hb-datepick-open' );
 		var $check_in = $inputs_wrapper.find( '.hb-check-in-date' );
 		var $check_out = $inputs_wrapper.find( '.hb-check-out-date' );
 		booking_rules = $inputs_wrapper.parents( '.hbook-wrapper' ).data( 'booking-rules' );
@@ -367,6 +437,7 @@ jQuery(document).ready(function($) {
 	function close_datepick_popup() {
 		$( '.hb-datepick-popup-wrapper' ).fadeOut();
 		$( '.hb-datepick-active-inputs' ).removeClass( 'hb-datepick-active-inputs' );
+		$( 'html, body' ).removeClass( 'hb-datepick-open' );
 	}
 
 	function set_datepick_options( $inputs_wrapper ) {

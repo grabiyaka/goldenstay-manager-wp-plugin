@@ -23,7 +23,7 @@ if ( ! function_exists( 'adomus_save_accommodation_meta' ) ) {
 }
 
 // Plugin constants
-define( 'GOLDENSTAY_VERSION', '0.0.13' );
+define( 'GOLDENSTAY_VERSION', '0.0.17' );
 define( 'GOLDENSTAY_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'GOLDENSTAY_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 

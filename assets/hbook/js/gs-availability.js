@@ -102,6 +102,23 @@ jQuery( document ).ready( function( $ ) {
 				$calendar.data( 'wrapper-width', wrapper_width );
 				$calendar.parents( '.hb-availability-calendar-centered' ).width( 'auto' );
 
+				// On mobile/tablet widths, do not lock the centered wrapper to a fixed pixel width.
+				// A fixed width can exceed the viewport by a few pixels due to rounding and clip the rightmost column (ZA/ZO).
+				var is_narrow = false;
+				if ( window.matchMedia ) {
+					is_narrow = window.matchMedia( '(max-width: 980px)' ).matches;
+				} else {
+					is_narrow = $( window ).width() <= 980;
+				}
+
+				function apply_centered_width() {
+					if ( is_narrow ) {
+						$calendar.parents( '.hb-availability-calendar-centered' ).width( '100%' );
+					} else {
+						$calendar.parents( '.hb-availability-calendar-centered' ).width( $calendar.find( '.hb-datepick-wrapper' ).width() );
+					}
+				}
+
 				for ( var i = 0; i < calendar_sizes.length; i++ ) {
 					$calendar.datepick( 'option', 'monthsToShow', parseInt( calendar_sizes[i].cols ) );
 					calendar_widths[ calendar_sizes[i].cols ] = $calendar.find( '.hb-datepick-wrapper' ).width();
@@ -125,7 +142,7 @@ jQuery( document ).ready( function( $ ) {
 						if ( current_shown_year && current_shown_month ) {
 							$calendar.datepick( 'showMonth', current_shown_year, current_shown_month );
 						}
-						$calendar.parents( '.hb-availability-calendar-centered' ).width( $calendar.find( '.hb-datepick-wrapper' ).width() );
+						apply_centered_width();
 						return;
 					}
 				}
@@ -135,7 +152,7 @@ jQuery( document ).ready( function( $ ) {
 				if ( current_shown_year && current_shown_month ) {
 					$calendar.datepick( 'showMonth', current_shown_year, current_shown_month );
 				}
-				$calendar.parents( '.hb-availability-calendar-centered' ).width( $calendar.find( '.hb-datepick-wrapper' ).width() );
+				apply_centered_width();
 			}
 		}
 

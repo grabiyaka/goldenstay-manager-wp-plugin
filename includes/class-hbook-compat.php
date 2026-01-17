@@ -183,6 +183,20 @@ class GoldenStay_HBook_Compat {
             return;
         }
 
+        // Cache-busting in dev/prod:
+        // Some mobile browsers aggressively cache CSS by handle+version.
+        // Use filemtime where possible so style tweaks (like datepicker mobile fixes) show up immediately.
+        $asset_version = function( $relative_path ) {
+            $full = GOLDENSTAY_PLUGIN_DIR . ltrim( $relative_path, '/' );
+            if ( file_exists( $full ) ) {
+                $mtime = @filemtime( $full );
+                if ( $mtime ) {
+                    return GOLDENSTAY_VERSION . '.' . strval( $mtime );
+                }
+            }
+            return GOLDENSTAY_VERSION;
+        };
+
         // Styles
         // Prefer original HBook CSS if the plugin is installed (even if deactivated),
         // to match Adomus theme styling as closely as possible.
@@ -201,7 +215,7 @@ class GoldenStay_HBook_Compat {
             'gs-hb-datepick',
             GOLDENSTAY_PLUGIN_URL . 'assets/hbook/css/hb-datepick.css',
             array( 'gs-hb-front-end' ),
-            GOLDENSTAY_VERSION
+            $asset_version( 'assets/hbook/css/hb-datepick.css' )
         );
 
         // Datepick scripts (vendor-copied from HBook)
@@ -233,7 +247,7 @@ class GoldenStay_HBook_Compat {
             'gs-hb-datepick',
             GOLDENSTAY_PLUGIN_URL . 'assets/hbook/js/hb-datepick.js',
             array( 'jquery', 'gs-hb-jquery-datepick', 'gs-hb-utils' ),
-            GOLDENSTAY_VERSION,
+            $asset_version( 'assets/hbook/js/hb-datepick.js' ),
             true
         );
         wp_add_inline_script( 'gs-hb-datepick', $inline, 'before' );
@@ -256,14 +270,14 @@ class GoldenStay_HBook_Compat {
                 'gs-hb-booking',
                 GOLDENSTAY_PLUGIN_URL . 'assets/hbook/css/gs-booking.css',
                 array( 'gs-hb-front-end', 'gs-hb-datepick' ),
-                GOLDENSTAY_VERSION
+                $asset_version( 'assets/hbook/css/gs-booking.css' )
             );
         }
         wp_enqueue_script(
             'gs-hb-booking',
             GOLDENSTAY_PLUGIN_URL . 'assets/hbook/js/gs-booking.js',
             array( 'jquery', 'gs-hb-datepick', 'gs-hb-utils' ),
-            GOLDENSTAY_VERSION,
+            $asset_version( 'assets/hbook/js/gs-booking.js' ),
             true
         );
         wp_localize_script(

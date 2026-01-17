@@ -20,6 +20,13 @@
 	min-width: 620px;
 }
 
+/* Prevent "1-2px wider than viewport" layouts from enabling horizontal scroll
+   when the datepicker popup is visible. The class is toggled by hb-datepick.js */
+html.hb-datepick-open,
+body.hb-datepick-open {
+	overflow-x: hidden !important;
+}
+
 .hb-datepick-popup,
 .hb-datepick-wrapper {
 	background: #fff;
@@ -361,6 +368,130 @@ a.hb-people-popup-wrapper-close:hover {
 @media screen and (max-width: 480px) {
 	.hb-avail-line-break {
 		display: block;
+	}
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mobile: keep the datepicker popup fully visible on narrow screens           */
+/* -------------------------------------------------------------------------- */
+@media screen and (max-width: 980px) {
+	/* The default min-width (620px) makes the popup overflow on phones */
+	.hb-datepick-popup-wrapper {
+		min-width: 0 !important;
+		box-sizing: border-box !important;
+
+		/* Pin to viewport; override JS positioning completely */
+		position: fixed !important;
+		left: 12px !important;
+		right: 12px !important;
+		top: 10vh !important;
+		width: calc(100vw - 24px) !important;
+		max-width: none !important;
+		transform: none !important;
+
+		/* If the viewport is very short, allow scrolling inside the popup */
+		max-height: calc(100vh - 24px) !important;
+		overflow: auto !important;
+
+		/* Slightly tighter padding so the 7-day grid doesn't clip on the right */
+		padding: 10px 10px 6px !important;
+	}
+
+	/* Avoid any horizontal bleed from internal calendar layout */
+	.hb-datepick-popup,
+	.hb-datepick-wrapper {
+		width: 100% !important;
+		max-width: 100% !important;
+		/* If there is a sub-pixel rounding overflow, don't clip the last column */
+		overflow-x: visible !important;
+	}
+
+	/* Single month layout should fill available width */
+	.hb-dp-month {
+		float: none !important;
+		width: 100% !important;
+		padding: 0 0 6px !important;
+	}
+
+	/* Fix rounding overflow: 7 columns must be exactly 100%/7 on mobile */
+	.hb-dp-week-header div,
+	.hb-dp-day {
+		/* calc() tends to avoid the 1-2px clipping some mobile browsers show */
+		width: calc(100% / 7) !important;
+		padding: 0 !important; /* avoid cumulative rounding + padding */
+	}
+
+	/* Keep the hit area readable after removing padding */
+	.hb-dp-day > a,
+	.hb-dp-day > span {
+		padding: 1px;
+		box-sizing: border-box;
+	}
+
+	/* Remove multi-month divider on small screens */
+	.hb-dp-multi .hb-dp-month:not(.first) {
+		border-left: 0 !important;
+	}
+
+	/* Slightly tighter legend padding */
+	.hb-datepick-legend {
+		padding: 8px 34px 8px 10px !important;
+	}
+}
+
+/* -------------------------------------------------------------------------- */
+/* Touch devices: same fix even when the CSS viewport is "desktop" sized       */
+/* (e.g. missing/overridden meta viewport on some themes/browsers).            */
+/* -------------------------------------------------------------------------- */
+@media (hover: none) and (pointer: coarse) {
+	.hb-datepick-popup-wrapper {
+		min-width: 0 !important;
+		box-sizing: border-box !important;
+
+		position: fixed !important;
+		left: 12px !important;
+		right: 12px !important;
+		top: 10vh !important;
+		width: auto !important;
+		max-width: none !important;
+		transform: none !important;
+
+		max-height: calc(100vh - 24px) !important;
+		overflow: auto !important;
+		padding: 10px 10px 6px !important;
+	}
+
+	.hb-datepick-popup,
+	.hb-datepick-wrapper {
+		width: 100% !important;
+		max-width: 100% !important;
+		overflow-x: visible !important;
+	}
+
+	.hb-dp-month {
+		float: none !important;
+		width: 100% !important;
+		padding: 0 0 6px !important;
+	}
+
+	.hb-dp-week-header div,
+	.hb-dp-day {
+		width: calc(100% / 7) !important;
+		padding: 0 !important;
+	}
+
+	.hb-dp-day > a,
+	.hb-dp-day > span {
+		padding: 1px;
+		box-sizing: border-box;
+	}
+
+	.hb-dp-multi .hb-dp-month:not(.first) {
+		border-left: 0 !important;
+	}
+
+	.hb-datepick-legend {
+		padding: 8px 34px 8px 10px !important;
 	}
 }
 
