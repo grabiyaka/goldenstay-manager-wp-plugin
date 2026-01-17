@@ -373,6 +373,13 @@ class GoldenStay_Ajax {
         $title = (string) ( $prop['name'] ?? $prop['internal_name'] ?? ( 'Property ' . $property_id ) );
         $title = trim( $title ) !== '' ? $title : ( 'Property ' . $property_id );
 
+        // Try to prefill excerpt like existing cards on the website (e.g. "Geschikt tot 12 personen")
+        $capacity = intval( $prop['can_sleep_max'] ?? ( $prop['max_guests'] ?? 0 ) );
+        $excerpt = '';
+        if ( $capacity > 0 ) {
+            $excerpt = 'Geschikt tot ' . $capacity . ' personen';
+        }
+
         // Avoid duplicates: if an accommodation already mapped to this property_id exists, return it.
         $existing = new WP_Query( array(
             'post_type' => 'hb_accommodation',
@@ -399,6 +406,7 @@ class GoldenStay_Ajax {
         $post_id = wp_insert_post( array(
             'post_type' => 'hb_accommodation',
             'post_title' => $title,
+            'post_excerpt' => $excerpt,
             'post_status' => 'draft',
         ), true );
 
