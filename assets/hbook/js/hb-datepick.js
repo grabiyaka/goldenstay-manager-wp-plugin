@@ -231,18 +231,41 @@ jQuery(document).ready(function($) {
 			if ( top < 24 ) {
 				top = 24;
 			}
+			// Use visualViewport-derived width to avoid the "desktop layout viewport" issue on mobile,
+			// where left/right positioning can create a popup wider than the visible screen.
+			var max_popup_width = 660;
+			if ( viewport_width <= 520 ) {
+				max_popup_width = 320;
+			} else if ( viewport_width <= 699 ) {
+				max_popup_width = 480;
+			}
+			var desired_width = viewport_width - 24;
+			if ( desired_width > max_popup_width ) {
+				desired_width = max_popup_width;
+			}
+			if ( desired_width < 260 ) {
+				desired_width = viewport_width - 24;
+			}
+			if ( desired_width < 200 ) {
+				desired_width = viewport_width;
+			}
+			var left = Math.round( ( viewport_width - desired_width ) / 2 );
+			if ( left < 0 ) {
+				left = 0;
+			}
 			$wrapper.css({
 				position: 'fixed',
-				left: 12,
-				right: 12,
+				left: left,
+				right: 'auto',
 				top: top,
 				// Don't set explicit width when using left+right; this can create over-constraint and horizontal scroll.
-				width: 'auto',
-				maxWidth: 'none',
+				width: desired_width,
+				maxWidth: desired_width,
 				transform: 'none',
 				boxSizing: 'border-box',
 				maxHeight: ( viewport_height - 24 ),
-				overflow: 'auto'
+				overflowX: 'hidden',
+				overflowY: 'auto'
 			});
 			return;
 		}

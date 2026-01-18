@@ -463,6 +463,23 @@
             }, 10)
           }
 
+          // Populate fees in the details-step summary (otherwise it stays empty until a recalc happens).
+          try {
+            if (response.data && response.data.fee_amounts) {
+              updateFeesSummaryFromFeeAmounts($wrapper, response.data)
+            }
+          } catch (_) {
+            // ignore
+          }
+
+          // On mobile/tablet users often miss "Toon de prijs in detail".
+          // Auto-open the breakdown so property fees are immediately visible.
+          try {
+            maybeAutoOpenPriceBreakdown($wrapper)
+          } catch (_) {
+            // ignore
+          }
+
           // Mimic HBook UX: collapse form to summary + show "change search" button
           var $summary = $form.find('.hb-searched-summary')
           var $fields = $form.find('.hb-search-fields-and-submit')
@@ -490,6 +507,33 @@
     })
 
     return false
+  }
+
+  function maybeAutoOpenPriceBreakdown($wrapper) {
+    if (!$wrapper || !$wrapper.length) return
+
+    var viewportWidth = (window.visualViewport && window.visualViewport.width)
+      ? Math.round(window.visualViewport.width)
+      : $(window).width()
+
+    // Keep desktop UX intact.
+    if (viewportWidth > 980) return
+
+    var $results = $wrapper.find('.gs-hb-search-results').first()
+    if (!$results.length) return
+
+    var $accom = $results.find('.hb-accom').first()
+    if (!$accom.length) return
+
+    var $bd = $accom.find('.hb-price-breakdown').first()
+    var $link = $accom.find('.hb-view-price-breakdown').first()
+    if (!$bd.length || !$link.length) return
+
+    if ($bd.is(':visible')) return
+
+    $bd.show()
+    $link.find('.hb-price-bd-hide-text').show()
+    $link.find('.hb-price-bd-show-text').hide()
   }
 
   // Toggle "price details" block (matches HBook UX)

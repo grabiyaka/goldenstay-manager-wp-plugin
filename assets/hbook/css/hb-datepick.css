@@ -382,16 +382,13 @@ a.hb-people-popup-wrapper-close:hover {
 
 		/* Pin to viewport; override JS positioning completely */
 		position: fixed !important;
-		left: 12px !important;
-		right: 12px !important;
 		top: 10vh !important;
-		width: calc(100vw - 24px) !important;
-		max-width: none !important;
-		transform: none !important;
+		/* Position (left/top/width) is set by hb-datepick.js using visualViewport to avoid overflow */
 
-		/* If the viewport is very short, allow scrolling inside the popup */
+		/* If the viewport is very short, allow vertical scrolling inside the popup */
 		max-height: calc(100vh - 24px) !important;
-		overflow: auto !important;
+		overflow-x: hidden !important;
+		overflow-y: auto !important;
 
 		/* Slightly tighter padding so the 7-day grid doesn't clip on the right */
 		padding: 10px 10px 6px !important;
@@ -402,8 +399,8 @@ a.hb-people-popup-wrapper-close:hover {
 	.hb-datepick-wrapper {
 		width: 100% !important;
 		max-width: 100% !important;
-		/* If there is a sub-pixel rounding overflow, don't clip the last column */
-		overflow-x: visible !important;
+		/* Prevent horizontal scrollbars inside the popup */
+		overflow-x: hidden !important;
 	}
 
 	/* Single month layout should fill available width */
@@ -413,18 +410,31 @@ a.hb-people-popup-wrapper-close:hover {
 		padding: 0 0 6px !important;
 	}
 
+	/* jQuery datepick sometimes injects an inline width (e.g. 814px) on month rows/command wrapper.
+	   On mobile this can exceed the visible viewport (layout viewport vs visual viewport).
+	   Force the layout containers to fit the popup width. */
+	.hb-dp-cmd-wrapper,
+	.hb-dp-month-row,
+	.hb-dp-weeks,
+	.hb-dp-week {
+		width: 100% !important;
+		max-width: 100% !important;
+		box-sizing: border-box !important;
+	}
+
 	/* Fix rounding overflow: 7 columns must be exactly 100%/7 on mobile */
 	.hb-dp-week-header div,
 	.hb-dp-day {
 		/* calc() tends to avoid the 1-2px clipping some mobile browsers show */
-		width: calc(100% / 7) !important;
+		width: calc((100% - 0.01px) / 7) !important;
 		padding: 0 !important; /* avoid cumulative rounding + padding */
+		max-width: none !important;
 	}
 
 	/* Keep the hit area readable after removing padding */
 	.hb-dp-day > a,
 	.hb-dp-day > span {
-		padding: 1px;
+		padding: 0 !important;
 		box-sizing: border-box;
 	}
 
@@ -439,6 +449,27 @@ a.hb-people-popup-wrapper-close:hover {
 	}
 }
 
+/* Mobile width: keep popup compact (~300px) */
+@media screen and (max-width: 520px) {
+	.hb-datepick-popup-wrapper {
+		max-width: 320px;
+	}
+}
+
+/* Medium width: allow a bit more room */
+@media screen and (min-width: 521px) and (max-width: 699px) {
+	.hb-datepick-popup-wrapper {
+		max-width: 480px;
+	}
+}
+
+/* Wide enough for 2 months: ~600px+ */
+@media screen and (min-width: 700px) and (max-width: 980px) {
+	.hb-datepick-popup-wrapper {
+		max-width: 660px;
+	}
+}
+
 /* -------------------------------------------------------------------------- */
 /* Touch devices: same fix even when the CSS viewport is "desktop" sized       */
 /* (e.g. missing/overridden meta viewport on some themes/browsers).            */
@@ -449,15 +480,12 @@ a.hb-people-popup-wrapper-close:hover {
 		box-sizing: border-box !important;
 
 		position: fixed !important;
-		left: 12px !important;
-		right: 12px !important;
 		top: 10vh !important;
-		width: auto !important;
-		max-width: none !important;
-		transform: none !important;
+		/* Position (left/top/width) is set by hb-datepick.js using visualViewport to avoid overflow */
 
 		max-height: calc(100vh - 24px) !important;
-		overflow: auto !important;
+		overflow-x: hidden !important;
+		overflow-y: auto !important;
 		padding: 10px 10px 6px !important;
 	}
 
@@ -465,7 +493,7 @@ a.hb-people-popup-wrapper-close:hover {
 	.hb-datepick-wrapper {
 		width: 100% !important;
 		max-width: 100% !important;
-		overflow-x: visible !important;
+		overflow-x: hidden !important;
 	}
 
 	.hb-dp-month {
@@ -476,13 +504,13 @@ a.hb-people-popup-wrapper-close:hover {
 
 	.hb-dp-week-header div,
 	.hb-dp-day {
-		width: calc(100% / 7) !important;
+		width: calc((100% - 0.01px) / 7) !important;
 		padding: 0 !important;
 	}
 
 	.hb-dp-day > a,
 	.hb-dp-day > span {
-		padding: 1px;
+		padding: 0 !important;
 		box-sizing: border-box;
 	}
 

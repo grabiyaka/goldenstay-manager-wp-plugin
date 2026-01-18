@@ -517,6 +517,8 @@ class GoldenStay_HBook_Compat {
             array(
                 'available' => ! empty( $result['available'] ),
                 'mark_up' => isset( $result['mark_up'] ) ? $result['mark_up'] : '',
+                // For summary rendering (fees list in details step).
+                'fee_amounts' => ( isset( $result['fee_amounts'] ) && is_array( $result['fee_amounts'] ) ) ? $result['fee_amounts'] : array(),
             )
         );
     }
@@ -2039,6 +2041,24 @@ class GoldenStay_HBook_Compat {
         }
 
         $total = isset( $variant['total'] ) ? floatval( $variant['total'] ) : 0;
+
+        // Build fee_amounts map for frontend summary (gs-booking.js).
+        $fee_amounts = array();
+        $services = isset( $variant['services'] ) && is_array( $variant['services'] ) ? $variant['services'] : array();
+        foreach ( $services as $service ) {
+            if ( ! is_array( $service ) ) {
+                continue;
+            }
+            $fee_id = isset( $service['property_additional_fee_id'] ) ? intval( $service['property_additional_fee_id'] ) : 0;
+            if ( ! $fee_id ) {
+                continue;
+            }
+            $amount = isset( $service['amount'] ) ? floatval( $service['amount'] ) : 0;
+            $fee_amounts[ $fee_id ] = array(
+                'amount' => $amount,
+                'formatted' => $this->format_price( $amount ),
+            );
+        }
         $caption = 'Prijs voor ' . intval( $nights ) . ' nachten';
         $show_text = 'Toon de prijs in detail';
         $hide_text = 'Verberg prijs detail';
@@ -2101,6 +2121,7 @@ class GoldenStay_HBook_Compat {
             'success' => true,
             'available' => true,
             'mark_up' => $mark_up,
+            'fee_amounts' => $fee_amounts,
         );
     }
 
