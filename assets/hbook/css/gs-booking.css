@@ -70,6 +70,14 @@
   padding: 10px 0;
 }
 
+/* On mobile Adomus sidebars stack below content, which makes booking form appear duplicated.
+   Hide the widget/sidebar instance only (we add `.gs-hb-in-widget` from PHP). */
+@media (max-width: 768px) {
+  .hbook-wrapper[data-gs-hb-compat="1"].gs-hb-in-widget {
+    display: none;
+  }
+}
+
 .hbook-wrapper[data-gs-hb-compat="1"] .hb-button-wrapper input[type="submit"],
 .hbook-wrapper[data-gs-hb-compat="1"] .hb-button-wrapper input[type="button"] {
   background: var(--gs-hb-btn);

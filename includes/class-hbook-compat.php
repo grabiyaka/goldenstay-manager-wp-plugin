@@ -273,6 +273,19 @@ class GoldenStay_HBook_Compat {
                 $asset_version( 'assets/hbook/css/gs-booking.css' )
             );
         }
+
+        // Always add small CSS patches, even when hb booking CSS is overridden via admin.
+        // In Adomus the sidebar stacks below content on mobile, which makes the widget booking form look duplicated.
+        $booking_patches_css = '@media (max-width: 768px) { .hbook-wrapper[data-gs-hb-compat="1"].gs-hb-in-widget { display: none; } }';
+        wp_register_style(
+            'gs-hb-booking-patches',
+            false,
+            array( 'gs-hb-booking' ),
+            GOLDENSTAY_VERSION
+        );
+        wp_enqueue_style( 'gs-hb-booking-patches' );
+        wp_add_inline_style( 'gs-hb-booking-patches', $booking_patches_css );
+
         wp_enqueue_script(
             'gs-hb-booking',
             GOLDENSTAY_PLUGIN_URL . 'assets/hbook/js/gs-booking.js',
@@ -2976,6 +2989,16 @@ class GoldenStay_HBook_Compat {
         $search_only = ( $atts['search_only'] === 'yes' ) ? 'yes' : 'no';
         $search_placeholder = ( $atts['search_form_placeholder'] === 'yes' ) ? 'yes' : 'no';
 
+        // Detect widget/sidebar context so we can style/hide the widget instance on mobile.
+        // (Adomus sidebars stack below content on narrow screens, which makes the booking form look duplicated.)
+        $is_widget_context = false;
+        if ( function_exists( 'doing_filter' ) ) {
+            $is_widget_context = $is_widget_context || doing_filter( 'widget_text' ) || doing_filter( 'widget_text_content' );
+        }
+        if ( function_exists( 'doing_action' ) ) {
+            $is_widget_context = $is_widget_context || doing_action( 'dynamic_sidebar' );
+        }
+
         $form_action = ( $search_only === 'yes' && ! empty( $atts['redirection_url'] ) && $atts['redirection_url'] !== '#' )
             ? esc_url( $atts['redirection_url'] )
             : esc_url( get_permalink( get_the_ID() ) );
@@ -2992,9 +3015,9 @@ class GoldenStay_HBook_Compat {
         $adults = isset( $_POST['hb-adults'] ) ? sanitize_text_field( $_POST['hb-adults'] ) : '';
         $children = isset( $_POST['hb-children'] ) ? sanitize_text_field( $_POST['hb-children'] ) : '';
 
-        // NOTE: HBook shows a title on accommodation pages.
+        // NOTE: HBook shows a title on accommodation pages (for booking form).
         $form_title = '';
-        if ( $page_accom_id ) {
+        if ( $page_accom_id && $search_only === 'no' ) {
             $accom_title = get_the_title( $page_accom_id );
             if ( ! $accom_title ) {
                 $accom_title = 'Accommodation';
@@ -3004,6 +3027,30 @@ class GoldenStay_HBook_Compat {
             '</h3>';
         }
         $form_class = 'hb-booking-search-form';
+
+        // Avoid duplicated booking/search form blocks on hb_accommodation pages.
+        // We keep the intended UX:
+        // - often there is ONE booking form in a sidebar widget (desktop-only)
+        // - and ONE booking form in the content (desktop+mobile)
+        // So for the "default" booking form variant (search_only="no" + empty form_id),
+        // we allow TWO instances. Everything else is capped to ONE.
+        if ( $page_accom_id && is_singular( 'hb_accommodation' ) ) {
+            static $rendered_booking_form_for_accom = array();
+            $render_key = strval( intval( $page_accom_id ) ) . '|' . strval( $search_only ) . '|' . strval( $form_id );
+
+            if ( ! isset( $rendered_booking_form_for_accom[ $render_key ] ) ) {
+                $rendered_booking_form_for_accom[ $render_key ] = 0;
+            }
+            $rendered_booking_form_for_accom[ $render_key ]++;
+
+            $max_allowed = 1;
+            if ( $search_only === 'no' && $form_id === '' ) {
+                $max_allowed = 2;
+            }
+            if ( $rendered_booking_form_for_accom[ $render_key ] > $max_allowed ) {
+                return '';
+            }
+        }
 
         $markup = $this->get_default_search_form_markup();
         $markup = apply_filters( 'hb_search_form_markup', $markup, $form_id );
@@ -3100,6 +3147,9 @@ class GoldenStay_HBook_Compat {
         if ( $page_accom_id ) {
             $wrapper_classes .= ' hb-accom-page';
         }
+        if ( $is_widget_context ) {
+            $wrapper_classes .= ' gs-hb-in-widget';
+        }
         $out = '<div id="' . esc_attr( 'hbook-booking-form-' . $gs_booking_form_num ) . '" class="' . esc_attr( $wrapper_classes ) . '" data-gs-hb-compat="1" ' .
             'data-booking-rules=\'' . esc_attr( wp_json_encode( $wrapper_rules ) ) . '\' ' .
             ( $page_accom_id ? 'data-page-accom-id="' . esc_attr( $page_accom_id ) . '" ' : '' ) .
@@ -3158,6 +3208,10 @@ class GoldenStay_HBook_Compat {
                 'redirection_url' => '#',
                 // Compatibility: allow forcing accommodation context.
                 'accom_id' => 'all',
+                // GoldenStay extension: (kept for backward compatibility)
+                // Historically hb_search_form could render on accommodation pages. We don't suppress it here;
+                // duplicates are handled in shortcode_booking_form() instead.
+                'allow_on_accom_page' => 'yes',
             ),
             $atts,
             'hb_search_form'
